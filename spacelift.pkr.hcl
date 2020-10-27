@@ -1,12 +1,25 @@
+variable "ami_regions" {
+  type = list(string)
+  default = [
+    "us-east-1",
+    "ap-southeast-1",
+    "eu-west-1",
+  ]
+}
+
 variable "base_ami" {
   type = string
 }
 
 source "amazon-ebs" "spacelift" {
-  source_ami    = var.base_ami
+  source_ami = var.base_ami
+
   instance_type = "t2.micro"
   ssh_username  = "ec2-user"
-  ami_name      = "spacelift"
+
+  ami_name    = "spacelift"
+  ami_regions = var.ami_regions
+  ami_groups  = ["all"]
 
   tags = {
     Name    = "Spacelift AMI"
