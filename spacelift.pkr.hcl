@@ -18,10 +18,19 @@ source "amazon-ebs" "spacelift" {
 build {
   sources = ["source.amazon-ebs.spacelift"]
 
+  provisioner "file" {
+    source      = "configs/"
+    destination = "/tmp"
+  }
+
   provisioner "shell" {
-    inline = [
-      "ls -la",
-      "ps aux",
+    scripts = [
+      "scripts/01-data-directories.sh",
+      "scripts/02-yum.sh",
+      "scripts/03-docker.sh",
+      "scripts/04-gvisor.sh",
+      "scripts/05-cloudwatch-agent.sh",
+      "scripts/06-jq.sh",
     ]
   }
 }
