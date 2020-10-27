@@ -8,11 +8,15 @@ source "amazon-ebs" "spacelift" {
   ssh_username  = "ec2-user"
   ami_name      = "spacelift"
 
-  tags {
+  tags = {
     Name    = "Spacelift AMI"
     Purpose = "Spacelift"
     BaseAMI = var.base_ami
   }
+}
+
+build {
+  sources = ["source.amazon-ebs.spacelift"]
 
   provisioner "shell" {
     inline = [
