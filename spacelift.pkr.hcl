@@ -17,7 +17,7 @@ source "amazon-ebs" "spacelift" {
   instance_type = "t2.micro"
   ssh_username  = "ec2-user"
 
-  ami_name    = "spacelift"
+  ami_name    = "spacelift-{{timestamp}}"
   ami_regions = var.ami_regions
   ami_groups  = ["all"]
 
