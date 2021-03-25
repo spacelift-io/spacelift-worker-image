@@ -3,6 +3,7 @@ variable "ami_regions" {
   default = [
     "us-east-1",
     "ap-southeast-1",
+    "eu-central-1",
     "eu-west-1",
   ]
 }
