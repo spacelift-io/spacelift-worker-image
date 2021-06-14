@@ -29,7 +29,7 @@ variable "source_ami_filter_filters" {
 
 variable "source_ami_filter_owners" {
   type    = list(string)
-  default = 137112412989
+  default = ["137112412989"]
 }
 
 variable "source_ami_filter_most_recent" {
