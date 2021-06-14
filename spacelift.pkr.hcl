@@ -14,7 +14,27 @@ variable "ami_regions" {
 }
 
 variable "base_ami" {
-  type = string
+  type    = string
+  default = null
+}
+
+variable "source_ami_filter_filters" {
+  type    = map(string)
+  default = {
+    virtualization-type = "hvm"
+    name                = "amzn2-ami-hvm-2*-x86_64-gp2"
+    root-device-type    = "ebs"
+  }
+}
+
+variable "source_ami_filter_owners" {
+  type    = list(string)
+  default = 137112412989
+}
+
+variable "source_ami_filter_most_recent" {
+  type    = bool
+  default = true
 }
 
 variable "ami_groups" {
@@ -59,6 +79,15 @@ variable "vpc_id" {
 
 source "amazon-ebs" "spacelift" {
   source_ami = var.base_ami
+  
+  dynamic "source_ami_filter" {
+    for_each = var.base_ami == null ? [1] : []
+    content {
+      filters = var.source_ami_filter_filters
+      owners = var.source_ami_filter_owners
+      most_recent = var.source_ami_filter_most_recent
+    }
+  }
 
   ami_name    = var.ami_name
   ami_regions = var.ami_regions
@@ -84,7 +113,7 @@ source "amazon-ebs" "spacelift" {
   tags = merge(var.additional_tags, {
     Name      = "Spacelift AMI"
     Purpose   = "Spacelift"
-    BaseAMI   = var.base_ami
+    BaseAMI   = "{{ .SourceAMI }}"
   })
 }
 
