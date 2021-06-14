@@ -19,7 +19,7 @@ variable "base_ami" {
 
 variable "ami_groups" {
   type    = list(string)
-  default = ["all"]
+  default = null
 }
 
 variable "instance_type" {
