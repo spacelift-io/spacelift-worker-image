@@ -18,7 +18,7 @@ variable "base_ami" {
   default = null
 }
 
-variable "source_ami_filter_filters" {
+variable "source_ami_filters" {
   type    = map(string)
   default = {
     virtualization-type = "hvm"
@@ -27,12 +27,12 @@ variable "source_ami_filter_filters" {
   }
 }
 
-variable "source_ami_filter_owners" {
+variable "source_ami_owners" {
   type    = list(string)
   default = ["137112412989"]
 }
 
-variable "source_ami_filter_most_recent" {
+variable "source_ami_most_recent" {
   type    = bool
   default = true
 }
@@ -83,9 +83,9 @@ source "amazon-ebs" "spacelift" {
   dynamic "source_ami_filter" {
     for_each = var.base_ami == null ? [1] : []
     content {
-      filters = var.source_ami_filter_filters
-      owners = var.source_ami_filter_owners
-      most_recent = var.source_ami_filter_most_recent
+      filters     = var.source_ami_filters
+      owners      = var.source_ami_owners
+      most_recent = var.source_ami_most_recent
     }
   }
 
