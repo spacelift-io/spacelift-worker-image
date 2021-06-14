@@ -57,6 +57,11 @@ variable "vpc_id" {
   default = null
 }
 
+variable "encrypt_boot" {
+  type    = bool
+  default = false
+}
+
 source "amazon-ebs" "spacelift" {
   source_ami = var.base_ami
 
@@ -80,6 +85,8 @@ source "amazon-ebs" "spacelift" {
       random = false
     }
   }
+  
+  encrypt_boot = var.encrypt_boot
 
   tags = merge(var.additional_tags, {
     Name      = "Spacelift AMI"
