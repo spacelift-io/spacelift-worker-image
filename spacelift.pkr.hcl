@@ -79,7 +79,7 @@ variable "vpc_id" {
 
 source "amazon-ebs" "spacelift" {
   source_ami = var.base_ami
-  
+
   dynamic "source_ami_filter" {
     for_each = var.base_ami == null ? [1] : []
     content {
