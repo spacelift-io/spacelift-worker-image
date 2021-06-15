@@ -29,7 +29,7 @@ variable "source_ami_filters" {
 
 variable "source_ami_owners" {
   type    = list(string)
-  default = ["137112412989"]
+  default = ["137112412989"] # defaults to Amazon for Amazon Linux, see https://docs.aws.amazon.com/AmazonECR/latest/userguide/amazon_linux_container_image.html
 }
 
 variable "source_ami_most_recent" {
