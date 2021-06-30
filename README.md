@@ -1,65 +1,11 @@
 # spacelift-worker-image
-Building Spacelift-friendly image for private workers
 
-## Usage
+Building Spacelift-friendly images for private workers.
 
-### Use an official AMI
+## Structure
 
-Find the latest AMIs in the [releases](https://github.com/spacelift-io/spacelift-worker-image/releases) section
+This repo contains packer templates for building AWS and Azure images. See the relevant section
+depending on the type of image you want to build:
 
-#### awscli
-
-Use the `awscli` to get the latest AMI
-
-```shell
-aws ec2 describe-images \
-  --owners 643313122712 \
-  --filters "Name=name,Values=spacelift-*" \
-  --query 'sort_by(Images, &CreationDate)[-1]'
-```
-
-#### Terraform
-
-Use a terraform data source to retrieve the latest AMI
-
-```hcl
-provider "aws" {
-  region = "us-east-2"
-}
-
-data "aws_ami" "spacelift" {
-  most_recent      = true
-  owners           = ["643313122712"] # spacelift owner
-
-  filter {
-    name   = "name"
-    values = ["spacelift-*"]
-  }
-
-  filter {
-    name   = "root-device-type"
-    values = ["ebs"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-output "ami" {
-  value = data.aws_ami.spacelift.image_id
-}
-```
-
-### Build your own AMI
-
-```
-git clone git@github.com:spacelift-io/spacelift-worker-image.git
-cd spacelift-worker-image
-packer build spacelift.pkr.hcl
-```
-
-Override the defaults using `-var="region=us-east-2"`
-
-The variables are located in the `spacelift.pkr.hcl` file.
+- [AWS](./aws/README.md)
+- [Azure](./azure/README.md)
