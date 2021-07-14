@@ -68,7 +68,7 @@ variable "source_image_sku" {
 
 variable "location" {
   type    = string
-  default = "West Europe"
+  default = ""
 }
 
 variable "vm_size" {
@@ -114,7 +114,7 @@ source "azure-arm" "spacelift" {
   image_offer     = var.source_image_offer
   image_sku       = var.source_image_sku
   
-  resource_group_name = var.packer_work_group
+  build_resource_group_name = var.packer_work_group
 
   location = var.location
   vm_size  = var.vm_size
