@@ -63,7 +63,7 @@ source "googlecompute" "spacelift" {
   machine_type        = var.machine_type
   account_file        = var.account_file
 
-  image_name              = "${var.image_base_name}-${var.image_storage_location}-{{var.suffix}}"
+  image_name              = "${var.image_base_name}-${var.image_storage_location}-${var.suffix}"
   image_family            = var.image_family
   image_storage_locations = [var.image_storage_location]
 }
