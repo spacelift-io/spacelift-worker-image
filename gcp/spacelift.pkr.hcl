@@ -10,12 +10,12 @@ variable "project_id" {
 
 variable "image_base_name" {
   type    = string
-  default = "cube2222" // spacelift-private-worker
+  default = "spacelift-private-worker"
 }
 
 variable "image_family" {
   type    = string
-  default = "cube2222-private-worker" //spacelift-private-worker
+  default = "spacelift-private-worker"
 }
 
 variable "image_storage_location" {
