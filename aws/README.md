@@ -55,10 +55,10 @@ output "ami" {
 
 ```shell
 git clone git@github.com:spacelift-io/spacelift-worker-image.git
-cd spacelift-worker-image/aws
-packer build spacelift.pkr.hcl
+cd spacelift-worker-image
+packer build aws.pkr.hcl
 ```
 
 Override the defaults using `-var="region=us-east-2"`
 
-The variables are located in the `spacelift.pkr.hcl` file.
+The variables are located in the `aws.pkr.hcl` file.

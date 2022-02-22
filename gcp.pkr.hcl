@@ -73,11 +73,11 @@ build {
 
   provisioner "shell" {
     scripts = [
-      "scripts/01-data-directories.sh",
-      "scripts/02-apt.sh",
-      "scripts/03-docker.sh",
-      "scripts/04-gvisor.sh",
-      "scripts/05-jq.sh",
+      "shared/scripts/data-directories.sh",
+      "shared/scripts/apt-update.sh",
+      "shared/scripts/apt-install-docker.sh",
+      "shared/scripts/gvisor.sh",
+      "shared/scripts/apt-install-jq.sh",
     ]
   }
 }

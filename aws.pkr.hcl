@@ -128,18 +128,18 @@ build {
   sources = ["source.amazon-ebs.spacelift"]
 
   provisioner "file" {
-    source      = "configs/"
+    source      = "aws/configs/"
     destination = "/tmp"
   }
 
   provisioner "shell" {
     scripts = [
-      "scripts/01-data-directories.sh",
-      "scripts/02-yum.sh",
-      "scripts/03-docker.sh",
-      "scripts/04-gvisor.sh",
-      "scripts/05-cloudwatch-agent.sh",
-      "scripts/06-jq.sh",
+      "shared/scripts/data-directories.sh",
+      "aws/scripts/yum-update.sh",
+      "aws/scripts/docker.sh",
+      "shared/scripts/gvisor.sh",
+      "aws/scripts/cloudwatch-agent.sh",
+      "aws/scripts/jq.sh",
     ]
   }
 }
