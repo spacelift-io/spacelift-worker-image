@@ -2,7 +2,8 @@
 set -e
 
 ARCH=$(uname -m)
-URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
+GVISOR_VERSION="20220103"
+URL=https://storage.googleapis.com/gvisor/releases/release/${GVISOR_VERSION}/${ARCH}
 
 wget ${URL}/runsc ${URL}/runsc.sha512 ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
 sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
