@@ -1,22 +1,12 @@
 variable "ami_name" {
   type    = string
-  default = "spacelift-{{timestamp}}"
+  default = "kernel-5-spacelift-{{timestamp}}"
 }
 
 variable "ami_regions" {
   type = list(string)
   default = [
-    "us-east-1",
-    "us-east-2",
-    "us-west-1",
-    "us-west-2",
-    "ap-northeast-1",
-    "ap-southeast-1",
-    "ap-southeast-2",
-    "ca-central-1",
-    "eu-central-1",
     "eu-west-1",
-    "eu-central-1"
   ]
 }
 
@@ -29,7 +19,7 @@ variable "source_ami_filters" {
   type    = map(string)
   default = {
     virtualization-type = "hvm"
-    name                = "amzn2-ami-hvm-2*-x86_64-gp2"
+    name                = "amzn2-ami-kernel-5.10-hvm-2*-x86_64-gp2"
     root-device-type    = "ebs"
   }
 }
