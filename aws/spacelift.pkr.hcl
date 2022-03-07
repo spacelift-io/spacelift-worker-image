@@ -29,7 +29,7 @@ variable "source_ami_filters" {
   type    = map(string)
   default = {
     virtualization-type = "hvm"
-    name                = "amzn2-ami-hvm-2*-x86_64-gp2"
+    name                = "amzn2-ami-kernel-5.10-hvm-2*-x86_64-gp2"
     root-device-type    = "ebs"
   }
 }
