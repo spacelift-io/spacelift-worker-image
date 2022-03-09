@@ -6,13 +6,13 @@
 
 ```shell
 git clone git@github.com:spacelift-io/spacelift-worker-image.git
-cd spacelift-worker-image/azure
-packer build spacelift.pkr.hcl
+cd spacelift-worker-image
+packer build azure.pkr.hcl
 ```
 
 Override the defaults using `-var="location=westeurope"`
 
-The variables are located in the `spacelift.pkr.hcl` file.
+The variables are located in the `azure.pkr.hcl` file.
 
 ### Shared Image Gallery
 

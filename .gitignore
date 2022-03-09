@@ -6,3 +6,6 @@ crash.log
 
 # For built boxes
 *.box
+
+# Ignore pkrvars files used for local testing
+*.pkrvars.hcl
