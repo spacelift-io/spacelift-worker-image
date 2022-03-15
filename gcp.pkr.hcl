@@ -35,7 +35,7 @@ variable "source_image" {
 
 variable "suffix" {
   type    = string
-  default = null
+  description = "A suffix to add to image names to ensure each version is unique. For example a timestamp or version number."
 }
 
 variable "machine_type" {
