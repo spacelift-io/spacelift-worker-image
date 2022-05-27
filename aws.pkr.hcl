@@ -6,17 +6,18 @@ variable "ami_name" {
 variable "ami_regions" {
   type = list(string)
   default = [
-    "us-east-1",
-    "us-east-2",
-    "us-west-1",
-    "us-west-2",
     "ap-northeast-1",
     "ap-southeast-1",
     "ap-southeast-2",
     "ca-central-1",
     "eu-central-1",
+    "eu-central-1",
     "eu-west-1",
-    "eu-central-1"
+    "sa-east-1",
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
   ]
 }
 
@@ -26,7 +27,7 @@ variable "base_ami" {
 }
 
 variable "source_ami_filters" {
-  type    = map(string)
+  type = map(string)
   default = {
     virtualization-type = "hvm"
     name                = "amzn2-ami-kernel-5.10-hvm-2*-x86_64-gp2"
@@ -111,16 +112,16 @@ source "amazon-ebs" "spacelift" {
   dynamic "subnet_filter" {
     for_each = var.subnet_filter == null ? [] : [1]
     content {
-      filters = var.subnet_filter
+      filters   = var.subnet_filter
       most_free = true
-      random = false
+      random    = false
     }
   }
 
   tags = merge(var.additional_tags, {
-    Name      = "Spacelift AMI"
-    Purpose   = "Spacelift"
-    BaseAMI   = "{{ .SourceAMI }}"
+    Name    = "Spacelift AMI"
+    Purpose = "Spacelift"
+    BaseAMI = "{{ .SourceAMI }}"
   })
 }
 
