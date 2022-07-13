@@ -5,7 +5,7 @@
         "run_as_user": "root"
     },
     "metrics": {
-        "namespace": "SpaceliftWorkerImage",
+        "namespace": "SpaceliftWorker",
         "metrics_collected": {
             "disk": {
                 "resources": ["/", "/tmp"],
