@@ -85,6 +85,11 @@ variable "vpc_id" {
   default = null
 }
 
+variable "cloudwatch_agent_config_version" {
+  type    = string
+  default = "1"
+}
+
 source "amazon-ebs" "spacelift" {
   source_ami = var.base_ami
 
@@ -142,5 +147,9 @@ build {
       "aws/scripts/cloudwatch-agent.sh",
       "aws/scripts/jq.sh",
     ]
+  }
+  env = {
+    # used by cloudwatch-agent.sh
+    CLOUDWATCH_AGENT_CONFIG_VERSION = var.cloudwatch_agent_config_version,
   }
 }
