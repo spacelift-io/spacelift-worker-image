@@ -1,0 +1,55 @@
+name: Validate the Packer templates
+
+on:
+  push:
+    branches-ignore: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 👷 ${{ matrix.cloud }}
+    strategy:
+      matrix:
+        cloud: [aws, azure, gcp]
+    runs-on: ubuntu-latest
+    env:
+      # GCP
+      PKR_VAR_project_id: spacelift-workers
+      PKR_VAR_account_file: ./gcp.json
+      PKR_VAR_image_base_name: spacelift-worker
+      PKR_VAR_image_family: spacelift-worker
+      # Azure
+      PKR_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+      PKR_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
+      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_gallery_name: worker_images_public
+      PKR_VAR_gallery_image_name: ubuntu_20_04
+      PKR_VAR_gallery_replication_regions: '["westeurope"]'
+      PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
+
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Create account file for GCP
+        if: matrix.cloud == 'gcp'
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS_JSON }}' > ${{ env.PKR_VAR_account_file }}
+
+      - name: Export suffix for GCP
+        if: matrix.cloud == 'gcp'
+        run: |
+          echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
+
+      - name: Validate the Packer template
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: validate
+          target: ${{ matrix.cloud }}.pkr.hcl
