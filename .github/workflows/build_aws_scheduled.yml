@@ -1,0 +1,36 @@
+name: AWS AMI scheduled publish
+
+on:
+  schedule:
+    # Every Sunday at 23:00 UTC
+    - cron: "00 23 * * 0"
+
+jobs:
+  build:
+    name: Build the AWS AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Validate the Packer template
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: validate
+          target: aws.pkr.hcl
+
+      - name: Build the AWS AMI using Packer
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: build
+          target: aws.pkr.hcl
