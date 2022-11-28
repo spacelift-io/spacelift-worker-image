@@ -16,6 +16,8 @@ jobs:
         cloud: [aws, azure, gcp]
     runs-on: ubuntu-latest
     env:
+      # AWS
+      PKR_VAR_encrypt_boot: false
       # GCP
       PKR_VAR_project_id: spacelift-workers
       PKR_VAR_account_file: ./gcp.json
