@@ -90,7 +90,7 @@ jobs:
         uses: hashicorp/packer-github-actions@master
         if: matrix.cloud == 'gcp'
         env:
-          PKR_VAR_image_storage_location: ez
+          PKR_VAR_image_storage_location: eu
           PKR_VAR_zone: europe-west1-d
         with:
           command: build
