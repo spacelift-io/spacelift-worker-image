@@ -1,11 +1,11 @@
-name: AWS & GCP AMI manual publish
+name: Azure & GCP AMI manual publish
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build the AWS & GCP AMIs using Packer
+    name: Build the Azure & GCP AMIs using Packer
     strategy:
       matrix:
         cloud: [azure, gcp]
