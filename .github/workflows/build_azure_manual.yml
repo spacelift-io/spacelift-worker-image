@@ -1,0 +1,40 @@
+name: Azure AMI manual publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build the Azure AMIs using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PKR_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+      PKR_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
+      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_gallery_name: worker_images_public
+      PKR_VAR_gallery_image_name: ubuntu_20_04
+      PKR_VAR_gallery_replication_regions: '["westeurope"]'
+      PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
+
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Validate the Packer template
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: validate
+          target: azure.pkr.hcl
+
+      - name: Azure => Build the AMI using Packer
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: build
+          target: azure.pkr.hcl

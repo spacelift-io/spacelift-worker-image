@@ -1,36 +1,24 @@
-name: Azure & GCP AMI manual publish
+name: GCP AMI manual publish
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build the Azure & GCP AMIs using Packer
+    name: Build the GCP AMIs using Packer
     strategy:
       matrix:
-        cloud: [azure, gcp]
+        image_family: [ubuntu-2004-lts, ubuntu-2004-lts-arm64]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     env:
-      # GCP
       PKR_VAR_project_id: spacelift-workers
       PKR_VAR_account_file: ./gcp.json
       PKR_VAR_image_base_name: spacelift-worker
       PKR_VAR_image_family: spacelift-worker
-      # Azure
-      PKR_VAR_client_id: ${{ secrets.AZURE_CLIENT_ID }}
-      PKR_VAR_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
-      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
-      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
-      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
-      PKR_VAR_gallery_name: worker_images_public
-      PKR_VAR_gallery_image_name: ubuntu_20_04
-      PKR_VAR_gallery_replication_regions: '["westeurope"]'
-      PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
+      PKR_VAR_source_image_family: ${{ matrix.image_family }}
 
     steps:
       - name: Check out the source code
@@ -44,22 +32,18 @@ jobs:
           role-duration-seconds: 3600
 
       - name: Set up Google Cloud SDK
-        if: matrix.cloud == 'gcp'
         uses: google-github-actions/setup-gcloud@v1
 
       - name: Create account file for GCP
-        if: matrix.cloud == 'gcp'
         run: |
           echo '${{ secrets.GCP_CREDENTIALS_JSON }}' > ${{ env.PKR_VAR_account_file }}
 
       - name: Authenticate with GCP
-        if: matrix.cloud == 'gcp'
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
       - name: Export suffix for GCP
-        if: matrix.cloud == 'gcp'
         run: |
           echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
 
@@ -67,18 +51,10 @@ jobs:
         uses: hashicorp/packer-github-actions@master
         with:
           command: validate
-          target: ${{ matrix.cloud }}.pkr.hcl
-
-      - name: Azure => Build the AMI using Packer
-        uses: hashicorp/packer-github-actions@master
-        if: matrix.cloud == 'azure'
-        with:
-          command: build
-          target: azure.pkr.hcl
+          target: gcp.pkr.hcl
       
       - name: GCP => Build the AMI using Packer for US
         uses: hashicorp/packer-github-actions@master
-        if: matrix.cloud == 'gcp'
         env:
           PKR_VAR_image_storage_location: us
           PKR_VAR_zone: us-central1-a
@@ -88,7 +64,6 @@ jobs:
 
       - name: GCP => Build the AMI using Packer for EU
         uses: hashicorp/packer-github-actions@master
-        if: matrix.cloud == 'gcp'
         env:
           PKR_VAR_image_storage_location: eu
           PKR_VAR_zone: europe-west1-d
@@ -98,7 +73,6 @@ jobs:
 
       - name: GCP => Build the AMI using Packer for Asia
         uses: hashicorp/packer-github-actions@master
-        if: matrix.cloud == 'gcp'
         env:
           PKR_VAR_image_storage_location: asia
           PKR_VAR_zone: asia-northeast2-a
@@ -106,9 +80,12 @@ jobs:
           command: build
           target: gcp.pkr.hcl
 
-      - name: GCP => Add IAM policy binding to the Compute Engine images
-        if: matrix.cloud == 'gcp'
+      - rame: Set env var for base image name
         run: |
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-us-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-eu-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+          echo ARCHITECTURE=${{ matrix.image_family == 'ubuntu-2004-lts-arm64' && 'arm64' || 'x64' }} >> $GITHUB_ENV
+
+      - name: GCP => Add IAM policy binding to the Compute Engine images
+        run: |
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-us-${PKR_VAR_suffix}-${ARCHITECTURE} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-eu-${PKR_VAR_suffix}-${ARCHITECTURE} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix}-${ARCHITECTURE} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
