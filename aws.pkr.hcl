@@ -1,4 +1,4 @@
-variable "ami_name" {
+variable "ami_name_prefix" {
   type    = string
   default = "spacelift-{{timestamp}}"
 }
@@ -21,28 +21,14 @@ variable "ami_regions" {
   ]
 }
 
-variable "base_ami" {
-  type    = string
-  default = null
-}
-
-variable "source_ami_filters" {
-  type = map(string)
-  default = {
-    virtualization-type = "hvm"
-    name                = "amzn2-ami-kernel-5.10-hvm-2*-x86_64-gp2"
-    root-device-type    = "ebs"
-  }
+variable "source_ami_architecture" {
+  type = string
+  default = "x86_64"
 }
 
 variable "source_ami_owners" {
   type    = list(string)
   default = ["137112412989"] # defaults to Amazon for Amazon Linux, see https://docs.aws.amazon.com/AmazonECR/latest/userguide/amazon_linux_container_image.html
-}
-
-variable "source_ami_most_recent" {
-  type    = bool
-  default = true
 }
 
 variable "ami_groups" {
@@ -86,20 +72,25 @@ variable "vpc_id" {
 }
 
 source "amazon-ebs" "spacelift" {
-  source_ami = var.base_ami
-
-  dynamic "source_ami_filter" {
-    for_each = var.base_ami == null ? [1] : []
-    content {
-      filters     = var.source_ami_filters
+  source_ami_filter {
+      filters = {
+        virtualization-type = "hvm"
+        name                = "amzn2-ami-kernel-5.10-hvm-2*-gp2"
+        root-device-type    = "ebs"
+        architecture        = var.source_ami_architecture
+      }
       owners      = var.source_ami_owners
-      most_recent = var.source_ami_most_recent
-    }
+      most_recent = true
   }
 
-  ami_name    = var.ami_name
+  ami_name    = "${var.ami_name_prefix}-${var.source_ami_architecture}"
   ami_regions = var.ami_regions
   ami_groups  = var.ami_groups
+  ami_description = <<EOT
+Spacelift AMI built for ${var.source_ami_architecture}-based private worker pools.
+It contains all the neccessary tools to run Spacelift workers.
+More information: https://docs.spacelift.io.
+EOT
 
   shared_credentials_file = var.shared_credentials_file
   encrypt_boot            = var.encrypt_boot
@@ -119,9 +110,10 @@ source "amazon-ebs" "spacelift" {
   }
 
   tags = merge(var.additional_tags, {
-    Name    = "Spacelift AMI"
-    Purpose = "Spacelift"
-    BaseAMI = "{{ .SourceAMI }}"
+    Architecture = var.source_ami_architecture
+    Name         = "Spacelift AMI"
+    Purpose      = "Spacelift"
+    BaseAMI      = "{{ .SourceAMI }}"
   })
 }
 
