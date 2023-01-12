@@ -40,6 +40,6 @@ jobs:
         with:
           command: build
           target: aws.pkr.hcl
-          env:
+        env:
             PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
             PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
