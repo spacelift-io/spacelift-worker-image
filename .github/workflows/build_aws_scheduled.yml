@@ -7,7 +7,19 @@ on:
   workflow_dispatch:
 
 jobs:
+  timestamp:
+    name: Get the build timestamp
+    runs-on: ubuntu-latest
+    outputs:
+      timestamp: ${{ steps.timestamp.outputs.timestamp }}
+    steps:
+      - name: Get the timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+
   build:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
+    needs: timestamp
     strategy:
       matrix:
         arch: [x86_64, arm64]
@@ -41,5 +53,6 @@ jobs:
           command: build
           target: aws.pkr.hcl
         env:
+            PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
             PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
             PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
