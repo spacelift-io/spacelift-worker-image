@@ -8,6 +8,9 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
     name: Build the AWS AMI using Packer
     runs-on: ubuntu-latest
     permissions:
@@ -32,8 +35,11 @@ jobs:
           command: validate
           target: aws.pkr.hcl
 
-      - name: Build the AWS AMI using Packer
+      - name: Build the AWS AMI using Packer (${{ matrix.arch }})
         uses: hashicorp/packer-github-actions@master
         with:
           command: build
           target: aws.pkr.hcl
+          env:
+            PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+            PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
