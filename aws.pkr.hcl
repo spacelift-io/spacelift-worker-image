@@ -1,3 +1,12 @@
+packer {
+  required_plugins {
+    amazon-ami-management = {
+      version = "2.0.0"
+      source = "github.com/spacelift-io/amazon-ami-management"
+    }
+  }
+}
+
 variable "ami_name_prefix" {
   type    = string
   default = "spacelift-{{timestamp}}"
@@ -105,6 +114,8 @@ EOT
   vpc_id = var.vpc_id
   region = var.region
 
+  deprecate_at = timeadd(timestamp(), "8736h") # 52 weeks (1 year)
+
   dynamic "subnet_filter" {
     for_each = var.subnet_filter == null ? [] : [1]
     content {
@@ -139,5 +150,13 @@ build {
       "aws/scripts/cloudwatch-agent.sh",
       "aws/scripts/jq.sh",
     ]
+  }
+
+  post-processor "amazon-ami-management" {
+    # Deregister old AMIs, keep only the latest 180.
+    regions = var.ami_regions
+    tag_key = "Name"
+    tag_value = "Spacelift AMI"
+    keep_releases = 180
   }
 }
