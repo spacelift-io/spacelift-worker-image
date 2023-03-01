@@ -28,8 +28,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    env:
-      PKR_VAR_encrypt_boot: false
     steps:
       - name: Check out the source code
         uses: actions/checkout@main
@@ -53,6 +51,43 @@ jobs:
           command: build
           target: aws.pkr.hcl
         env:
+            PKR_VAR_encrypt_boot: false
             PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
             PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
             PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+  build-govcloud:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
+    needs: timestamp
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    name: Build the AWS (GovCloud) AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure GovCloud AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
+          role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Build the GovCloud AWS AMI using Packer (${{ matrix.arch }})
+        uses: hashicorp/packer-github-actions@master
+        with:
+          command: build
+          target: aws.pkr.hcl
+        env:
+          PKR_VAR_source_ami_owners: '["045324592363"]'
+          PKR_VAR_region: us-gov-east-1
+          PKR_VAR_ami_regions: '["us-gov-east-1", "us-gov-west-1"]'
+          PKR_VAR_encrypt_boot: false
+          PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
+          PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+          PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
