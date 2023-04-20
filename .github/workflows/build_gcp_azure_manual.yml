@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -63,48 +63,38 @@ jobs:
         run: |
           echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
 
-      - name: Validate the Packer template
-        uses: hashicorp/packer-github-actions@master
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
         with:
-          command: validate
-          target: ${{ matrix.cloud }}.pkr.hcl
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init ${{ matrix.cloud }}.pkr.hcl
 
       - name: Azure => Build the AMI using Packer
-        uses: hashicorp/packer-github-actions@master
         if: matrix.cloud == 'azure'
-        with:
-          command: build
-          target: azure.pkr.hcl
+        run: packer build azure.pkr.hcl
       
       - name: GCP => Build the AMI using Packer for US
-        uses: hashicorp/packer-github-actions@master
         if: matrix.cloud == 'gcp'
+        run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: us
           PKR_VAR_zone: us-central1-a
-        with:
-          command: build
-          target: gcp.pkr.hcl
 
       - name: GCP => Build the AMI using Packer for EU
-        uses: hashicorp/packer-github-actions@master
         if: matrix.cloud == 'gcp'
+        run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: eu
           PKR_VAR_zone: europe-west1-d
-        with:
-          command: build
-          target: gcp.pkr.hcl
 
       - name: GCP => Build the AMI using Packer for Asia
-        uses: hashicorp/packer-github-actions@master
         if: matrix.cloud == 'gcp'
+        run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: asia
           PKR_VAR_zone: asia-northeast2-a
-        with:
-          command: build
-          target: gcp.pkr.hcl
 
       - name: GCP => Add IAM policy binding to the Compute Engine images
         if: matrix.cloud == 'gcp'

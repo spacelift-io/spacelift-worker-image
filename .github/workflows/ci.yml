@@ -50,8 +50,14 @@ jobs:
         run: |
           echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
 
-      - name: Validate the Packer template
-        uses: hashicorp/packer-github-actions@master
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
         with:
-          command: validate
-          target: ${{ matrix.cloud }}.pkr.hcl
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init ${{ matrix.cloud }}.pkr.hcl
+
+      - name: Validate the Packer template
+        id: validate
+        run: packer validate ${{ matrix.cloud }}.pkr.hcl
