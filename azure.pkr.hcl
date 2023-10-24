@@ -150,4 +150,8 @@ build {
     ]
     inline_shebang = "/bin/sh -x"
   }
+
+  post-processor "manifest" {
+    output = "manifest_azure.json"
+  }
 }

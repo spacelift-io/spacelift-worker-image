@@ -80,4 +80,8 @@ build {
       "shared/scripts/apt-install-jq.sh",
     ]
   }
+
+  post-processor "manifest" {
+    output = "manifest_gcp.json"
+  }
 }

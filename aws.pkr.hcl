@@ -159,4 +159,8 @@ build {
     tag_value = "Spacelift AMI"
     keep_releases = 180
   }
+
+  post-processor "manifest" {
+    output = "manifest_aws.json"
+  }
 }

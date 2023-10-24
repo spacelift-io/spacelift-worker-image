@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -102,3 +102,10 @@ jobs:
           gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-us-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
           gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-eu-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
           gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v3
+        with:
+          path: manifest_${{ matrix.cloud }}.json
+          name: manifest_${{ matrix.cloud }}.json
+          retention-days: 5

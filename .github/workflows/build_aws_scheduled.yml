@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure GovCloud AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
           role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
@@ -95,3 +95,10 @@ jobs:
           PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
           PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
           PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v3
+        with:
+          path: manifest_aws.json
+          name: manifest_aws.json
+          retention-days: 5
