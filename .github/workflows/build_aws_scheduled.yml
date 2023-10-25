@@ -102,3 +102,64 @@ jobs:
           PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
           PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
           PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+  print-markdown:
+    needs: [build]
+    name: Print the AMI IDs in a markdown format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download x64 manifest
+        uses: actions/download-artifact@v3
+        with:
+          name: manifest_aws_x86_64.json
+          path: manifest_aws_x86_64.json
+
+      - name: Download arm64 manifest
+        uses: actions/download-artifact@v3
+        with:
+          name: manifest_aws_arm64.json
+          path: manifest_aws_arm64.json
+   
+      # The manifest file look like this:
+      # "builds": [
+      #   {
+      #     "name": "spacelift",
+      #     "builder_type": "amazon-ebs",
+      #     "build_time": 1698670371,
+      #     "files": null,
+      #     "artifact_id": "ap-northeast-1:ami-0facbd2b91807c339,ap-northeast-2:ami-03849b8d23619dfb2,...
+      #  }
+      # ]
+
+      - name: Print in a markdown format
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require("fs");
+
+            var content = fs.readFileSync("./manifest_aws_arm64.json", "utf8");
+            var manifest = JSON.parse(content);
+            
+            const toPrint = [];
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint.push(`| ${region} | ${ami} |`);
+                });
+            });
+            
+            content = fs.readFileSync("./manifest_aws_x86_64.json", "utf8");
+            manifest = JSON.parse(content);
+            
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi, i) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint[i] = toPrint[i] + ` ${ami} |`;
+                });
+            });
+            
+            console.log("| AWS Region       | AMI ID (ARM64)          | AMI ID (x86_64)         |");
+            console.log("|------------------|-------------------------|-------------------------|");
+            toPrint.forEach(line => console.log(line));
