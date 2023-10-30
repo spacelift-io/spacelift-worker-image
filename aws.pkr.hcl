@@ -161,6 +161,6 @@ build {
   }
 
   post-processor "manifest" {
-    output = "manifest_aws.json"
+    output = "manifest_aws_${var.source_ami_architecture}.json"
   }
 }
