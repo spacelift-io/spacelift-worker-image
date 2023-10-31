@@ -61,7 +61,7 @@ variable "additional_tags" {
 
 variable "region" {
   type    = string
-  default = "us-east-1"
+  default = "eu-west-1"
 }
 
 variable "vpc_id" {
@@ -133,7 +133,7 @@ build {
       "aws_minimal/scripts/docker.sh",
       "shared/scripts/gvisor.sh",
       "aws_minimal/scripts/cloudwatch-agent.sh",
-      "aws_minimal/scripts/ssm-agent.sh",
+      "aws_minimal/scripts/ssm-agent.sh"
     ]
   }
 

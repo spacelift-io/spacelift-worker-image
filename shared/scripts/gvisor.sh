@@ -4,7 +4,7 @@ set -e
 CURRENTARCH=$(uname -m)
 URL=https://storage.googleapis.com/gvisor/releases/release/latest/${CURRENTARCH}
 
-wget ${URL}/runsc ${URL}/runsc.sha512 ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
+curl --remote-name-all ${URL}/{runsc,runsc.sha512,containerd-shim-runsc-v1,containerd-shim-runsc-v1.sha512}
 sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
 rm -f *.sha512
 
