@@ -146,6 +146,6 @@ build {
   }
 
   post-processor "manifest" {
-    output = "manifest_aws_minimal.json"
+    output = "manifest_aws_minimal_${var.source_ami_architecture}.json"
   }
 }
