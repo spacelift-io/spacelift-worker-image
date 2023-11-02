@@ -1,0 +1,60 @@
+name: AWS minimal AMI manual publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  timestamp:
+    name: Get the build timestamp
+    runs-on: ubuntu-latest
+    outputs:
+      timestamp: ${{ steps.timestamp.outputs.timestamp }}
+    steps:
+      - name: Get the timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+
+  build:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
+    needs: timestamp
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    name: Build the AWS AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init aws_minimal.pkr.hcl
+
+      - name: Build the AWS AMI using Packer (${{ matrix.arch }})
+        run: packer build aws_minimal.pkr.hcl
+        env:
+            PKR_VAR_encrypt_boot: false
+            PKR_VAR_ami_name_prefix: minimal-beta-spacelift-${{ needs.timestamp.outputs.timestamp }}
+            PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+            PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v3
+        with:
+          path: manifest_aws_minimal_${{ matrix.arch }}.json
+          name: manifest_aws_minimal_${{ matrix.arch }}.json
+          retention-days: 5
