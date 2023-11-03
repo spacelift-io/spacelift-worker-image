@@ -130,6 +130,7 @@ build {
     scripts = [
       "shared/scripts/data-directories.sh",
       "aws_minimal/scripts/dnf-update.sh",
+      "aws_minimal/scripts/gnupg.sh",
       "aws_minimal/scripts/docker.sh",
       "shared/scripts/gvisor.sh",
       "aws_minimal/scripts/cloudwatch-agent.sh",
