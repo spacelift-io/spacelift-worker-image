@@ -89,7 +89,7 @@ source "amazon-ebs" "spacelift" {
   source_ami_filter {
       filters = {
         virtualization-type = "hvm"
-        name                = "amzn2-ami-kernel-5.10-hvm-2*-gp2"
+        name                = "al2023-ami-minimal-*-kernel-6.1-${var.source_ami_architecture}"
         root-device-type    = "ebs"
         architecture        = var.source_ami_architecture
       }
@@ -144,11 +144,12 @@ build {
   provisioner "shell" {
     scripts = [
       "shared/scripts/data-directories.sh",
-      "aws/scripts/yum-update.sh",
+      "aws/scripts/dnf-update.sh",
+      "aws/scripts/system-deps.sh",
       "aws/scripts/docker.sh",
       "shared/scripts/gvisor.sh",
       "aws/scripts/cloudwatch-agent.sh",
-      "aws/scripts/jq.sh",
+      "aws/scripts/ssm-agent.sh"
     ]
   }
 
