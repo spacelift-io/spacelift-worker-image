@@ -11,7 +11,7 @@ fi
 DOWNLOAD_URL=https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/${CURRENTARCH}/latest/amazon-cloudwatch-agent.rpm
 RPM_PATH=/tmp/amazon-cloudwatch-agent.rpm
 
-touch /var/log/spacelift/{info,error}.log
+sudo touch /var/log/spacelift/{info,error}.log
 
 curl $DOWNLOAD_URL --output $RPM_PATH
 sudo rpm -U $RPM_PATH
