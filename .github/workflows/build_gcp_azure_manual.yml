@@ -109,3 +109,73 @@ jobs:
           path: manifest_${{ matrix.cloud }}.json
           name: manifest_${{ matrix.cloud }}.json
           retention-days: 5
+
+  print-markdown:
+    needs: [build]
+    name: Print the AMI IDs in a markdown format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Google Cloud manifest
+        uses: actions/download-artifact@v3
+        with:
+          name: manifest_gcp.json
+          path: manifest_gcp.json
+
+      # The GCP manifest file look like this:
+      # "builds": [
+      #   {
+      #     "name": "spacelift",
+      #     "builder_type": "googlecompute",
+      #     "build_time": 1700479054,
+      #     "files": null,
+      #     "artifact_id": "spacelift-worker-us-1700478848-305dsvij",
+      #     "packer_run_uuid": "cdc82943-986b-5ab9-6ce1-9024ca0ebb6a",
+      #     "custom_data": null
+      #   },
+      #   {
+      #     "name": "spacelift",
+      #     "builder_type": "googlecompute",
+      #     "build_time": 1700479263,
+      #     "files": null,
+      #     "artifact_id": "spacelift-worker-eu-1700478848-305dsvij",
+      #     "packer_run_uuid": "2440c9b1-a342-3606-2661-6e5389bdffc6",
+      #     "custom_data": null
+      #   }
+      # ]
+
+      - name: Print in a markdown format
+        uses: actions/github-script@v6
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        with:
+          script: |
+            const fs = require("fs");
+
+            content = fs.readFileSync("./manifest_gcp.json", "utf8");
+            manifest = JSON.parse(content);
+            
+            const gcpLinesToPrint = [];
+            
+            manifest["builds"].forEach((build) => {
+                artifact = build["artifact_id"];
+                if (artifact.indexOf("-us-") > 0) {
+                    gcpLinesToPrint.push(` - United States | \`${artifact}\``);
+                }
+                if (artifact.indexOf("-eu-") > 0) {
+                    gcpLinesToPrint.push(` - Europe | \`${artifact}\``);
+                }
+                if (artifact.indexOf("-asia-") > 0) {
+                    gcpLinesToPrint.push(` - Asia | \`${artifact}\``);
+                }
+            });
+            
+            console.log("## Azure");
+            console.log("");
+            console.log(`- Publisher | \`spaceliftinc1625499025476\`.`);
+            console.log(`- Offer  | \`spacelift_worker\`.`);
+            console.log(`- SKU  | \`ubuntu_20_04\`.`);
+            console.log(`- Version  | \`1.0.${process.env.RUN_NUMBER}\`.`);
+            console.log("");
+            console.log("## Google Cloud Platform");
+            console.log("");
+            gcpLinesToPrint.forEach(line => console.log(line));

@@ -13,7 +13,7 @@ jobs:
     name: 👷 ${{ matrix.cloud }}
     strategy:
       matrix:
-        cloud: [aws, aws_minimal, azure, gcp]
+        cloud: [aws, azure, gcp]
     runs-on: ubuntu-latest
     env:
       # AWS
