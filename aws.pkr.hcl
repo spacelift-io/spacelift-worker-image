@@ -1,5 +1,10 @@
 packer {
   required_plugins {
+    amazon = {
+      source  = "github.com/hashicorp/amazon"
+      version = "~> 1"
+    }
+
     amazon-ami-management = {
       version = "2.0.0"
       source = "github.com/spacelift-io/amazon-ami-management"

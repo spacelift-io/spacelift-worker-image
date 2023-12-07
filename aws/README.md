@@ -13,9 +13,11 @@ Use the `awscli` to get the latest AMI
 ```shell
 aws ec2 describe-images \
   --owners 643313122712 \
-  --filters "Name=name,Values=spacelift-*" \
+  --filters "Name=name,Values=spacelift-*" "Name=architecture,Values=x86_64" \
   --query 'sort_by(Images, &CreationDate)[-1]'
 ```
+
+Architecture could be either `x86_64` or `arm64`.
 
 #### Terraform
 
