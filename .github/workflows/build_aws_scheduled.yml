@@ -112,13 +112,11 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: manifest_aws_x86_64.json
-          path: manifest_aws_x86_64.json
 
       - name: Download arm64 manifest
         uses: actions/download-artifact@v3
         with:
           name: manifest_aws_arm64.json
-          path: manifest_aws_arm64.json
    
       # The manifest file look like this:
       # "builds": [
