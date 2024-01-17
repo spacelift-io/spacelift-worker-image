@@ -119,7 +119,6 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: manifest_gcp.json
-          path: manifest_gcp.json
 
       # The GCP manifest file look like this:
       # "builds": [
