@@ -6,8 +6,8 @@ packer {
     }
 
     amazon-ami-management = {
-      version = "2.0.0"
-      source = "github.com/spacelift-io/amazon-ami-management"
+      version = "= 1.5.0"
+      source = "github.com/wata727/amazon-ami-management"
     }
   }
 }
@@ -161,8 +161,9 @@ build {
   post-processor "amazon-ami-management" {
     # Deregister old AMIs, keep only the latest 180.
     regions = var.ami_regions
-    tag_key = "Name"
-    tag_value = "Spacelift AMI"
+    tags = {
+      Name = "Spacelift AMI"
+    }
     keep_releases = 180
   }
 
