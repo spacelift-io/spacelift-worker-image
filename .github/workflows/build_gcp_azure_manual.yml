@@ -45,7 +45,7 @@ jobs:
 
       - name: Set up Google Cloud SDK
         if: matrix.cloud == 'gcp'
-        uses: google-github-actions/setup-gcloud@v1
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Create account file for GCP
         if: matrix.cloud == 'gcp'
