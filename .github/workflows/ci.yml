@@ -30,8 +30,6 @@ jobs:
       PKR_VAR_client_id: "433d3ca3-1866-4dfa-b9bf-65d6c4391ec7"
       PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
       PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      PKR_VAR_oidc_request_url: "${ACTIONS_ID_TOKEN_REQUEST_URL}"
-      PKR_VAR_oidc_request_token: "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
       PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope

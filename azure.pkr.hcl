@@ -14,12 +14,12 @@ variable "client_id" {
 
 variable "oidc_request_url" {
   type    = string
-  default = ""
+  default = env("ACTIONS_ID_TOKEN_REQUEST_URL") // Github built-in variable
 }
 
 variable "oidc_request_token" {
   type    = string
-  default = ""
+  default = env("ACTIONS_ID_TOKEN_REQUEST_TOKEN") // Github built-in variable
 }
 
 variable "subscription_id" {
