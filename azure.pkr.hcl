@@ -12,7 +12,12 @@ variable "client_id" {
   default = ""
 }
 
-variable "client_secret" {
+variable "oidc_request_url" {
+  type    = string
+  default = ""
+}
+
+variable "oidc_request_token" {
   type    = string
   default = ""
 }
@@ -97,10 +102,11 @@ variable "packer_work_group" {
 }
 
 source "azure-arm" "spacelift" {
-  client_id       = var.client_id
-  client_secret   = var.client_secret
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
+  client_id          = var.client_id
+  subscription_id    = var.subscription_id
+  tenant_id          = var.tenant_id
+  oidc_request_url   = var.oidc_request_url
+  oidc_request_token = var.oidc_request_token
 
   managed_image_name                = var.image_name
   managed_image_resource_group_name = var.image_resource_group
