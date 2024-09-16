@@ -47,7 +47,6 @@ variable "gallery_resource_group" {
 
 variable "gallery_name" {
   type    = string
-  default = null
 }
 
 variable "gallery_image_name" {
@@ -111,16 +110,13 @@ source "azure-arm" "spacelift" {
   managed_image_name                = var.image_name
   managed_image_resource_group_name = var.image_resource_group
 
-  dynamic "shared_image_gallery_destination" {
-    for_each = var.gallery_name != null ? [0] : []
-    content {
-      subscription         = var.subscription_id
-      resource_group       = var.gallery_resource_group
-      gallery_name         = var.gallery_name
-      image_name           = var.gallery_image_name
-      image_version        = var.gallery_image_version
-      replication_regions  = var.gallery_replication_regions
-    }
+  shared_image_gallery_destination {
+    subscription         = var.subscription_id
+    resource_group       = var.gallery_resource_group
+    gallery_name         = var.gallery_name
+    image_name           = var.gallery_image_name
+    image_version        = var.gallery_image_version
+    replication_regions  = var.gallery_replication_regions
   }
 
   os_type = "Linux"
