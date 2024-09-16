@@ -26,9 +26,9 @@ jobs:
       PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
-      PKR_VAR_gallery_name: worker_images_public
-      PKR_VAR_gallery_image_name: ubuntu_20_04
-      PKR_VAR_gallery_replication_regions: '["westeurope"]'
+      PKR_VAR_gallery_name: spacelift_worker_images_public
+      PKR_VAR_gallery_image_name: spacelift_worker_image
+      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "eastus", "eastus2", "westus2", "westus3"]'
       PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
 
     steps:
@@ -53,7 +53,7 @@ jobs:
 
       - name: Authenticate with GCP
         if: matrix.cloud == 'gcp'
-        uses: google-github-actions/auth@v1
+        uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
