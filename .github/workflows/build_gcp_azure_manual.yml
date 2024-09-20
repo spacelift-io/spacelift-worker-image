@@ -28,7 +28,7 @@ jobs:
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
       PKR_VAR_gallery_image_name: spacelift_worker_image
-      PKR_VAR_gallery_replication_regions: '["westeurope"]'
+      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "eastus", "eastus2", "westus2", "westus3"]'
       PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
 
     steps:
@@ -169,10 +169,10 @@ jobs:
 
             console.log("## Azure");
             console.log("");
-            console.log(`- Publisher | \`spaceliftinc1625499025476\`.`);
-            console.log(`- Offer  | \`spacelift_worker\`.`);
-            console.log(`- SKU  | \`ubuntu_20_04\`.`);
-            console.log(`- Version  | \`1.0.${process.env.RUN_NUMBER}\`.`);
+            console.log(`- Community Gallery Name | \`spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079\``);
+            console.log(`- Image name | \`spacelift_worker_image\``);
+            console.log(`- Version | \`1.0.${process.env.RUN_NUMBER}\``);
+            console.log(`- Resource ID | \`/CommunityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/Images/spacelift_worker_image/Versions/1.0.${process.env.RUN_NUMBER}\``);
             console.log("");
             console.log("## Google Cloud Platform");
             console.log("");

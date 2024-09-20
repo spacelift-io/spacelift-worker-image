@@ -116,7 +116,18 @@ source "azure-arm" "spacelift" {
     gallery_name         = var.gallery_name
     image_name           = var.gallery_image_name
     image_version        = var.gallery_image_version
-    replication_regions  = var.gallery_replication_regions
+
+    target_region {
+      name = var.location
+    }
+
+    dynamic target_region {
+      for_each = var.gallery_replication_regions
+
+      content {
+        name = target_region.value
+      }
+    }
   }
 
   os_type = "Linux"
@@ -151,6 +162,10 @@ build {
       "shared/scripts/apt-install-jq.sh",
       "azure/scripts/azure-cli.sh",
     ]
+
+    env = {
+      DEBIAN_FRONTEND = "noninteractive"
+    }
   }
 
   # Deprovision VM
