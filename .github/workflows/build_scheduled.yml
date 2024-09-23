@@ -1,0 +1,371 @@
+name: Scheduled publish
+
+on:
+  schedule:
+    # Every Sunday at 23:00 UTC
+    - cron: "00 23 * * 0"
+  workflow_dispatch:
+
+jobs:
+  timestamp:
+    name: Get a unified build timestamp
+    runs-on: ubuntu-latest
+    outputs:
+      timestamp: ${{ steps.timestamp.outputs.timestamp }}
+    steps:
+      - name: Get the timestamp
+        id: timestamp
+        run: echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+
+  aws:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
+    needs: timestamp
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    name: Build the AWS AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init aws.pkr.hcl
+
+      - name: Build the AWS AMI using Packer (${{ matrix.arch }})
+        run: packer build aws.pkr.hcl
+        env:
+            PKR_VAR_encrypt_boot: false
+            PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
+            PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+            PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          path: manifest_aws_${{ matrix.arch }}.json
+          name: manifest_aws_${{ matrix.arch }}.json
+          retention-days: 5
+
+  aws-govcloud:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
+    needs: timestamp
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    name: Build the AWS (GovCloud) AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure GovCloud AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
+          role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init aws.pkr.hcl
+
+      - name: Build the GovCloud AWS AMI using Packer (${{ matrix.arch }})
+        run: packer build aws.pkr.hcl
+        env:
+          PKR_VAR_source_ami_owners: '["045324592363"]'
+          PKR_VAR_region: us-gov-east-1
+          PKR_VAR_ami_regions: '["us-gov-east-1", "us-gov-west-1"]'
+          PKR_VAR_encrypt_boot: false
+          PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
+          PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+          PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+
+  azure:
+    name: Build Azure AMI using Packer
+    runs-on: ubuntu-latest
+    env:
+      PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
+      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
+      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_gallery_name: spacelift_worker_images_public
+      PKR_VAR_gallery_image_name: spacelift_worker_image
+      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "eastus", "eastus2", "westus2", "westus3"]'
+      PKR_VAR_gallery_image_version: 1.0.${{ github.run_number }}
+
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init azure.pkr.hcl
+
+      - name: Azure => Build the AMI using Packer
+        run: packer build azure.pkr.hcl
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          path: manifest_azure.json
+          name: manifest_azure.json
+          retention-days: 5
+
+      - name: Export Azure version number
+        id: export_azure_version
+        run: |
+          echo "azure_version=$(PKR_VAR_gallery_image_version)" >> $GITHUB_OUTPUT
+
+    outputs:
+      azure_version: ${{ steps.export_azure_version.outputs.azure_version }}
+
+  gcp:
+    name: Build GCP AMI using Packer
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PKR_VAR_project_id: spacelift-workers
+      PKR_VAR_account_file: ./gcp.json
+      PKR_VAR_image_base_name: spacelift-worker
+      PKR_VAR_image_family: spacelift-worker
+
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Create account file for GCP
+        run: |
+          echo '${{ secrets.GCP_CREDENTIALS_JSON }}' > ${{ env.PKR_VAR_account_file }}
+
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
+
+      - name: Export suffix for GCP
+        run: |
+          echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init gcp.pkr.hcl
+
+      - name: GCP => Build the AMI using Packer for US
+        run: packer build gcp.pkr.hcl
+        env:
+          PKR_VAR_image_storage_location: us
+          PKR_VAR_zone: us-central1-a
+
+      - name: GCP => Build the AMI using Packer for EU
+        run: packer build gcp.pkr.hcl
+        env:
+          PKR_VAR_image_storage_location: eu
+          PKR_VAR_zone: europe-west1-d
+
+      - name: GCP => Build the AMI using Packer for Asia
+        run: packer build gcp.pkr.hcl
+        env:
+          PKR_VAR_image_storage_location: asia
+          PKR_VAR_zone: asia-northeast2-a
+
+      - name: GCP => Add IAM policy binding to the Compute Engine images
+        run: |
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-us-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-eu-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          path: manifest_gcp.json
+          name: manifest_gcp.json
+          retention-days: 5
+
+  gh-release:
+    needs: [aws, azure, gcp]
+    name: Create tag & publish GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      # Technically, we don't need the source code but the git tagging action requires it
+      - name: Checkout source code
+        uses: actions/checkout@main
+ 
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          create_annotated_tag: true
+          tag_prefix: ""
+          default_bump: minor
+
+      - name: Download AWS x64 manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest_aws_x86_64.json
+
+      - name: Download AWS arm64 manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest_aws_arm64.json
+   
+      # The manifest file look like this:
+      # "builds": [
+      #   {
+      #     "name": "spacelift",
+      #     "builder_type": "amazon-ebs",
+      #     "build_time": 1698670371,
+      #     "files": null,
+      #     "artifact_id": "ap-northeast-1:ami-0facbd2b91807c339,ap-northeast-2:ami-03849b8d23619dfb2,...
+      #  }
+      # ]
+
+      - name: Write AWS AMI IDs to a markdown file
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+
+            var content = fs.readFileSync("./manifest_aws_arm64.json", "utf8");
+            var manifest = JSON.parse(content);
+            
+            const toPrint = [];
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint.push(`| ${region} | ${ami} |`);
+                });
+            });
+            
+            content = fs.readFileSync("./manifest_aws_x86_64.json", "utf8");
+            manifest = JSON.parse(content);
+            
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi, i) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint[i] = toPrint[i] + ` ${ami} |`;
+                });
+            });
+            
+            const header = [
+                "## AWS",
+                "",
+                "| AWS Region       | AMI ID (ARM64)          | AMI ID (x86_64)         |",
+                "|------------------|-------------------------|-------------------------|",
+            ]
+            fs.writeFileSync("./body.md", header.join("\n") + "\n" + toPrint.join("\n"));
+
+      - name: Download Google Cloud manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest_gcp.json
+
+        # The GCP manifest file look like this:
+        # "builds": [
+        #   {
+        #     "name": "spacelift",
+        #     "builder_type": "googlecompute",
+        #     "build_time": 1700479054,
+        #     "files": null,
+        #     "artifact_id": "spacelift-worker-us-1700478848-305dsvij",
+        #     "packer_run_uuid": "cdc82943-986b-5ab9-6ce1-9024ca0ebb6a",
+        #     "custom_data": null
+        #   },
+        #   {
+        #     "name": "spacelift",
+        #     "builder_type": "googlecompute",
+        #     "build_time": 1700479263,
+        #     "files": null,
+        #     "artifact_id": "spacelift-worker-eu-1700478848-305dsvij",
+        #     "packer_run_uuid": "2440c9b1-a342-3606-2661-6e5389bdffc6",
+        #     "custom_data": null
+        #   }
+        # ]
+  
+      - name: Write Azure and GCP AMI IDs to the markdown file
+        uses: actions/github-script@v7
+        env:
+          AZURE_VERSION: ${{ needs.azure.outputs.azure_version }}
+        with:
+          script: |
+            const fs = require("fs");
+    
+            content = fs.readFileSync("./manifest_gcp.json", "utf8");
+            manifest = JSON.parse(content);
+    
+            const gcpLinesToPrint = [];
+    
+            manifest["builds"].forEach((build) => {
+                    artifact = build["artifact_id"];
+                    if (artifact.indexOf("-us-") > 0) {
+                        gcpLinesToPrint.push(` - United States | \`${artifact}\``);
+                    }
+                    if (artifact.indexOf("-eu-") > 0) {
+                        gcpLinesToPrint.push(` - Europe | \`${artifact}\``);
+                    }
+                    if (artifact.indexOf("-asia-") > 0) {
+                        gcpLinesToPrint.push(` - Asia | \`${artifact}\``);
+                    }
+            });
+    
+            azureLines = [
+                "## Azure",
+                "",
+                "- Community Gallery Name | `spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079`",
+                "- Image name | `spacelift_worker_image`",
+                `- Version | \`${process.env.AZURE_VERSION}\``,
+                "- Resource ID | `/CommunityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/Images/spacelift_worker_image/Versions/${process.env.AZURE_VERSION}`",
+                "",
+                "## Google Cloud Platform",
+                "",
+            ];
+            fs.appendFileSync("./body.md", "\n\n" + azureLines.join("\n") + "\n" + gcpLinesToPrint.join("\n"));
+
+
+
+      - name: Create GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.tag_version.outputs.new_tag }}
+          name: ${{ steps.tag_version.outputs.new_tag }}
+          bodyFile: ./body.md
