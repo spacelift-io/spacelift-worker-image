@@ -88,6 +88,10 @@ build {
       "shared/scripts/gvisor.sh",
       "shared/scripts/apt-install-jq.sh",
     ]
+
+    env = {
+      DEBIAN_FRONTEND = "noninteractive"
+    }
   }
 
   post-processor "manifest" {

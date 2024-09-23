@@ -10,7 +10,7 @@ cd spacelift-worker-image
 packer build azure.pkr.hcl
 ```
 
-Override the defaults using `-var="location=westeurope"`
+Override the defaults using `-var="variable-name=variable-value"`
 
 The variables are located in the `azure.pkr.hcl` file.
 

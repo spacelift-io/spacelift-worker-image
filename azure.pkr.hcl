@@ -79,11 +79,6 @@ variable "source_image_sku" {
   default = "20_04-daily-lts-gen2"
 }
 
-variable "location" {
-  type    = string
-  default = ""
-}
-
 variable "vm_size" {
   type    = string
   default = "Standard_B2S"
@@ -116,7 +111,14 @@ source "azure-arm" "spacelift" {
     gallery_name         = var.gallery_name
     image_name           = var.gallery_image_name
     image_version        = var.gallery_image_version
-    replication_regions  = var.gallery_replication_regions
+
+    dynamic target_region {
+      for_each = var.gallery_replication_regions
+
+      content {
+        name = target_region.value
+      }
+    }
   }
 
   os_type = "Linux"
@@ -127,7 +129,6 @@ source "azure-arm" "spacelift" {
   
   build_resource_group_name = var.packer_work_group
 
-  location = var.location
   vm_size  = var.vm_size
 
   azure_tags = merge(var.additional_tags, {
@@ -151,6 +152,10 @@ build {
       "shared/scripts/apt-install-jq.sh",
       "azure/scripts/azure-cli.sh",
     ]
+
+    env = {
+      DEBIAN_FRONTEND = "noninteractive"
+    }
   }
 
   # Deprovision VM
