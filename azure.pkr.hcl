@@ -79,11 +79,6 @@ variable "source_image_sku" {
   default = "20_04-daily-lts-gen2"
 }
 
-variable "location" {
-  type    = string
-  default = ""
-}
-
 variable "vm_size" {
   type    = string
   default = "Standard_B2S"
@@ -134,7 +129,6 @@ source "azure-arm" "spacelift" {
   
   build_resource_group_name = var.packer_work_group
 
-  location = var.location
   vm_size  = var.vm_size
 
   azure_tags = merge(var.additional_tags, {
