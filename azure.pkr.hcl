@@ -117,10 +117,6 @@ source "azure-arm" "spacelift" {
     image_name           = var.gallery_image_name
     image_version        = var.gallery_image_version
 
-    target_region {
-      name = var.location
-    }
-
     dynamic target_region {
       for_each = var.gallery_replication_regions
 
