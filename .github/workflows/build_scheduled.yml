@@ -106,6 +106,9 @@ jobs:
   azure:
     name: Build Azure AMI using Packer
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     env:
       PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
       PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
