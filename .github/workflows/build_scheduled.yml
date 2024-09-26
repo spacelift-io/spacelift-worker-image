@@ -146,7 +146,7 @@ jobs:
       - name: Export Azure version number
         id: export_azure_version
         run: |
-          echo "azure_version=$(PKR_VAR_gallery_image_version)" >> $GITHUB_OUTPUT
+          echo "azure_version=$PKR_VAR_gallery_image_version" >> $GITHUB_OUTPUT
 
     outputs:
       azure_version: ${{ steps.export_azure_version.outputs.azure_version }}
