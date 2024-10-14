@@ -36,7 +36,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-duration-seconds: 3600
 
       - name: Setup packer
@@ -50,10 +50,10 @@ jobs:
       - name: Build the AWS AMI using Packer (${{ matrix.arch }})
         run: packer build aws.pkr.hcl
         env:
-            PKR_VAR_encrypt_boot: false
-            PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
-            PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
-            PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
+          PKR_VAR_encrypt_boot: false
+          PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
+          PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
+          PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
 
       - name: Upload manifest
         uses: actions/upload-artifact@v4
@@ -230,7 +230,7 @@ jobs:
       # Technically, we don't need the source code but the git tagging action requires it
       - name: Checkout source code
         uses: actions/checkout@main
- 
+
       - name: Bump version and push tag
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
@@ -249,7 +249,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: manifest_aws_arm64.json
-   
+
       # The manifest file look like this:
       # "builds": [
       #   {
@@ -269,7 +269,7 @@ jobs:
 
             var content = fs.readFileSync("./manifest_aws_arm64.json", "utf8");
             var manifest = JSON.parse(content);
-            
+
             const toPrint = [];
             manifest["builds"].forEach((build) => {
                 const regionToAmi = build["artifact_id"].split(",");
@@ -278,10 +278,10 @@ jobs:
                     toPrint.push(`| ${region} | ${ami} |`);
                 });
             });
-            
+
             content = fs.readFileSync("./manifest_aws_x86_64.json", "utf8");
             manifest = JSON.parse(content);
-            
+
             manifest["builds"].forEach((build) => {
                 const regionToAmi = build["artifact_id"].split(",");
                 regionToAmi.forEach((regionToAmi, i) => {
@@ -289,7 +289,7 @@ jobs:
                     toPrint[i] = toPrint[i] + ` ${ami} |`;
                 });
             });
-            
+
             const header = [
                 "## AWS",
                 "",
@@ -324,7 +324,7 @@ jobs:
         #     "custom_data": null
         #   }
         # ]
-  
+
       - name: Write Azure and GCP AMI IDs to the markdown file
         uses: actions/github-script@v7
         env:
@@ -332,12 +332,12 @@ jobs:
         with:
           script: |
             const fs = require("fs");
-    
+
             content = fs.readFileSync("./manifest_gcp.json", "utf8");
             manifest = JSON.parse(content);
-    
+
             const gcpLinesToPrint = [];
-    
+
             manifest["builds"].forEach((build) => {
                     artifact = build["artifact_id"];
                     if (artifact.indexOf("-us-") > 0) {
@@ -350,7 +350,7 @@ jobs:
                         gcpLinesToPrint.push(` - Asia | \`${artifact}\``);
                     }
             });
-    
+
             azureLines = [
                 "## Azure",
                 "",
