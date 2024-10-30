@@ -118,7 +118,7 @@ jobs:
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
       PKR_VAR_gallery_image_name: spacelift_worker_image
-      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "eastus", "eastus2", "westus2", "westus3"]'
+      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "eastus", "eastus2", "westus2", "westus3", "australiaeast"]'
       PKR_VAR_gallery_image_version: 2.0.${{ github.run_number }}
 
     steps:
