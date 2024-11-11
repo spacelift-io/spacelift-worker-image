@@ -14,6 +14,7 @@ RPM_PATH=/tmp/amazon-cloudwatch-agent.rpm
 sudo touch /var/log/spacelift/{info,error}.log
 
 curl $DOWNLOAD_URL --output $RPM_PATH
+df # Temporarily, till we figure out the disk space issue
 sudo rpm -U $RPM_PATH
 rm $RPM_PATH
 sudo mv ${CONFIG_SOURCE} ${CONFIG_DESTINATION}
