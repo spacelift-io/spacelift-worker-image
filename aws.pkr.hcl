@@ -102,6 +102,13 @@ source "amazon-ebs" "spacelift" {
       most_recent = true
   }
 
+  launch_block_device_mappings {
+    device_name = "/dev/sda1"
+    volume_size = 8
+    volume_type = "gp2"
+    delete_on_termination = true
+  }
+
   ami_name    = "${var.ami_name_prefix}-${var.source_ami_architecture}"
   ami_regions = var.ami_regions
   ami_groups  = var.ami_groups
