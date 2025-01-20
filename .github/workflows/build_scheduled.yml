@@ -48,7 +48,8 @@ jobs:
         run: packer init aws.pkr.hcl
 
       - name: Build the AWS AMI using Packer (${{ matrix.arch }})
-        run: packer build aws.pkr.hcl
+        # We only run the cleanup postprocessor for one of them, to avoid race conditions
+        run: packer build aws.pkr.hcl ${{ matrix.arch == 'x86_64' && '--except=amazon-ami-management' || '' }}
         env:
           PKR_VAR_encrypt_boot: false
           PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
@@ -93,7 +94,8 @@ jobs:
         run: packer init aws.pkr.hcl
 
       - name: Build the GovCloud AWS AMI using Packer (${{ matrix.arch }})
-        run: packer build aws.pkr.hcl
+        # We only run the cleanup postprocessor for one of them, to avoid race conditions
+        run: packer build aws.pkr.hcl ${{ matrix.arch == 'x86_64' && '--except=amazon-ami-management' || '' }}
         env:
           PKR_VAR_source_ami_owners: '["045324592363"]'
           PKR_VAR_region: us-gov-east-1
