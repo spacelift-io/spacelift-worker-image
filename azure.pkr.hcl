@@ -131,6 +131,8 @@ source "azure-arm" "spacelift" {
 
   vm_size  = var.vm_size
 
+  ssh_clear_authorized_keys = true
+
   azure_tags = merge(var.additional_tags, {
     Name                 = "Spacelift Worker Image"
     SourceImagePublisher = var.source_image_publisher
