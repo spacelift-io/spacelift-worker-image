@@ -63,14 +63,15 @@ variable "zone" {
 }
 
 source "googlecompute" "spacelift" {
-  project_id          = var.project_id
-  source_image_family = var.source_image_family
-  source_image        = var.source_image
-  ssh_username        = "spacelift"
-  zone                = var.zone
-  disk_size           = 50
-  machine_type        = var.machine_type
-  account_file        = var.account_file
+  project_id                = var.project_id
+  source_image_family       = var.source_image_family
+  source_image              = var.source_image
+  ssh_username              = "spacelift"
+  ssh_clear_authorized_keys = true
+  zone                      = var.zone
+  disk_size                 = 50
+  machine_type              = var.machine_type
+  account_file              = var.account_file
 
   image_name              = "${var.image_base_name}-${var.image_storage_location}-${var.suffix}"
   image_family            = var.image_family

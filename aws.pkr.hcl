@@ -118,10 +118,11 @@ It contains all the neccessary tools to run Spacelift workers.
 More information: https://docs.spacelift.io.
 EOT
 
-  shared_credentials_file = var.shared_credentials_file
-  encrypt_boot            = var.encrypt_boot
-  instance_type           = var.instance_type
-  ssh_username            = "ec2-user"
+  shared_credentials_file   = var.shared_credentials_file
+  encrypt_boot              = var.encrypt_boot
+  instance_type             = var.instance_type
+  ssh_username              = "ec2-user"
+  ssh_clear_authorized_keys = true
 
   vpc_id = var.vpc_id
   region = var.region
