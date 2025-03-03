@@ -105,6 +105,13 @@ jobs:
           PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
           PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
 
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          path: manifest_aws_${{ matrix.arch }}.json
+          name: manifest_aws_govcloud_${{ matrix.arch }}.json
+          retention-days: 5
+
   azure:
     name: Build Azure AMI using Packer
     runs-on: ubuntu-latest
@@ -225,7 +232,7 @@ jobs:
           retention-days: 5
 
   gh-release:
-    needs: [aws, azure, gcp]
+    needs: [aws, aws-govcloud, azure, gcp]
     name: Create tag & publish GitHub release
     runs-on: ubuntu-latest
     steps:
@@ -299,6 +306,53 @@ jobs:
                 "|------------------|-------------------------|-------------------------|",
             ]
             fs.writeFileSync("./body.md", header.join("\n") + "\n" + toPrint.join("\n"));
+
+      - name: Download GovCloud AWS x64 manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest_aws_govcloud_x86_64.json
+
+      - name: Download GovCloud AWS arm64 manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: manifest_aws_govcloud_arm64.json
+
+      - name: Write GovCloud AWS AMI IDs to the markdown file
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+
+            var content = fs.readFileSync("./manifest_aws_govcloud_arm64.json", "utf8");
+            var manifest = JSON.parse(content);
+
+            const toPrint = [];
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint.push(`| ${region} | ${ami} |`);
+                });
+            });
+
+            content = fs.readFileSync("./manifest_aws_govcloud_x86_64.json", "utf8");
+            manifest = JSON.parse(content);
+
+            manifest["builds"].forEach((build) => {
+                const regionToAmi = build["artifact_id"].split(",");
+                regionToAmi.forEach((regionToAmi, i) => {
+                    const [region, ami] = regionToAmi.split(":");
+                    toPrint[i] = toPrint[i] + ` ${ami} |`;
+                });
+            });
+
+            const header = [
+                "## AWS GovCloud",
+                "",
+                "| AWS Region | AMI ID (ARM64)          | AMI ID (x86_64)         |",
+                "|------------|-------------------------|-------------------------|",
+            ]
+            fs.appendFileSync("./body.md", "\n\n" + header.join("\n") + "\n" + toPrint.join("\n"));
 
       - name: Download Google Cloud manifest
         uses: actions/download-artifact@v4
