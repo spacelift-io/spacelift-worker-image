@@ -18,3 +18,4 @@ sudo rpm -U $RPM_PATH
 rm $RPM_PATH
 sudo mv ${CONFIG_SOURCE} ${CONFIG_DESTINATION}
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:${CONFIG_DESTINATION}
+sudo systemctl enable amazon-cloudwatch-agent.service
