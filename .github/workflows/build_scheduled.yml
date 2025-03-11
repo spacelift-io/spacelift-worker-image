@@ -105,10 +105,14 @@ jobs:
           PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
           PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
 
+      - name: Rename the manifest file
+        run: |
+          mv manifest_aws_${{ matrix.arch }}.json manifest_aws_govcloud_${{ matrix.arch }}.json
+
       - name: Upload manifest
         uses: actions/upload-artifact@v4
         with:
-          path: manifest_aws_${{ matrix.arch }}.json
+          path: manifest_aws_govcloud_${{ matrix.arch }}.json
           name: manifest_aws_govcloud_${{ matrix.arch }}.json
           retention-days: 5
 
