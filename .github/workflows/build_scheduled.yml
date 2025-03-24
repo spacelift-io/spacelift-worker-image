@@ -46,6 +46,8 @@ jobs:
 
       - name: Initialize Packer
         run: packer init aws.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Build the AWS AMI using Packer (${{ matrix.arch }})
         # We only run the cleanup postprocessor for one of them, to avoid race conditions
@@ -92,6 +94,8 @@ jobs:
 
       - name: Initialize Packer
         run: packer init aws.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Build the GovCloud AWS AMI using Packer (${{ matrix.arch }})
         # We only run the cleanup postprocessor for one of them, to avoid race conditions
@@ -145,6 +149,8 @@ jobs:
 
       - name: Initialize Packer
         run: packer init azure.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Azure => Build the AMI using Packer
         run: packer build azure.pkr.hcl
@@ -203,6 +209,8 @@ jobs:
 
       - name: Initialize Packer
         run: packer init gcp.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: GCP => Build the AMI using Packer for US
         run: packer build gcp.pkr.hcl
