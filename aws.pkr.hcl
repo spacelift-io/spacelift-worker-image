@@ -28,6 +28,7 @@ variable "ami_regions" {
     "ap-south-1",
     "ca-central-1",
     "eu-central-1",
+    "eu-central-2",
     "eu-west-1",
     "eu-west-2",
     "eu-west-3",
