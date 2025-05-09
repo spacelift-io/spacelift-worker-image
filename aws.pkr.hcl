@@ -173,7 +173,7 @@ build {
     tags = {
       Name = "Spacelift AMI"
     }
-    keep_releases = 180
+    keep_days = 365
   }
 
   post-processor "manifest" {
