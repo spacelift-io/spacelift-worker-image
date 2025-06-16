@@ -7,7 +7,7 @@ packer {
   }
 }
 
-variable "account_file" {
+variable "credentials_json" {
   type    = string
   default = null
 }
@@ -65,7 +65,7 @@ source "googlecompute" "spacelift" {
   zone                      = var.zone
   disk_size                 = 50
   machine_type              = var.machine_type
-  account_file              = var.account_file
+  credentials_json          = var.credentials_json
 
   image_name              = "${var.image_base_name}-${var.image_storage_location}-${var.suffix}"
   image_family            = var.image_family

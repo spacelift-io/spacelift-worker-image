@@ -178,7 +178,7 @@ jobs:
       contents: read
     env:
       PKR_VAR_project_id: spacelift-workers
-      PKR_VAR_account_file: ./gcp.json
+      PKR_VAR_credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
       PKR_VAR_image_base_name: spacelift-worker
       PKR_VAR_image_family: spacelift-worker
 
@@ -188,10 +188,6 @@ jobs:
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-
-      - name: Create account file for GCP
-        run: |
-          echo '${{ secrets.GCP_CREDENTIALS_JSON }}' > ${{ env.PKR_VAR_account_file }}
 
       - name: Authenticate with GCP
         uses: google-github-actions/auth@v2
