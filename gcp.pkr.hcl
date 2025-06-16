@@ -34,12 +34,7 @@ variable "image_storage_location" {
 
 variable "source_image_family" {
   type    = string
-  default = "ubuntu-2004-lts"
-}
-
-variable "source_image" {
-  type    = string
-  default = null
+  default = "ubuntu-2404-lts-amd64"
 }
 
 variable "suffix" {
@@ -65,7 +60,6 @@ variable "zone" {
 source "googlecompute" "spacelift" {
   project_id                = var.project_id
   source_image_family       = var.source_image_family
-  source_image              = var.source_image
   ssh_username              = "spacelift"
   ssh_clear_authorized_keys = true
   zone                      = var.zone
