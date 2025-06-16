@@ -23,7 +23,7 @@ jobs:
       PKR_VAR_encrypt_boot: false
       # GCP
       PKR_VAR_project_id: spacelift-workers
-      PKR_VAR_account_file: ./gcp.json
+      PKR_VAR_credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
       PKR_VAR_image_base_name: spacelift-worker
       PKR_VAR_image_family: spacelift-worker
       # Azure
@@ -41,11 +41,6 @@ jobs:
     steps:
       - name: Check out the source code
         uses: actions/checkout@main
-
-      - name: Create account file for GCP
-        if: matrix.cloud == 'gcp'
-        run: |
-          echo '${{ secrets.GCP_CREDENTIALS_JSON }}' > ${{ env.PKR_VAR_account_file }}
 
       - name: Export suffix for GCP
         if: matrix.cloud == 'gcp'
