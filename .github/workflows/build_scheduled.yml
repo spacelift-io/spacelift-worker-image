@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
@@ -59,7 +59,7 @@ jobs:
           PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
 
       - name: Upload manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: manifest_aws_${{ matrix.arch }}.json
           name: manifest_aws_${{ matrix.arch }}.json
@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Configure GovCloud AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
           role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
@@ -114,7 +114,7 @@ jobs:
           mv manifest_aws_${{ matrix.arch }}.json manifest_aws_govcloud_${{ matrix.arch }}.json
 
       - name: Upload manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: manifest_aws_govcloud_${{ matrix.arch }}.json
           name: manifest_aws_govcloud_${{ matrix.arch }}.json
@@ -135,7 +135,7 @@ jobs:
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
       PKR_VAR_gallery_image_name: spacelift_worker_image
-      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "centralus", "eastus", "eastus2", "westus2", "westus3", "australiaeast"]'
+      PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "centralus", "eastus", "eastus2", "westus2", "westus3", "australiaeast", "southcentralus"]'
       PKR_VAR_gallery_image_version: 2.0.${{ github.run_number }}
 
     steps:
@@ -156,7 +156,7 @@ jobs:
         run: packer build azure.pkr.hcl
 
       - name: Upload manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: manifest_azure.json
           name: manifest_azure.json
@@ -187,10 +187,10 @@ jobs:
         uses: actions/checkout@main
 
       - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Authenticate with GCP
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
 
@@ -233,7 +233,7 @@ jobs:
           gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
 
       - name: Upload manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           path: manifest_gcp.json
           name: manifest_gcp.json
@@ -258,12 +258,12 @@ jobs:
           default_bump: minor
 
       - name: Download AWS x64 manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: manifest_aws_x86_64.json
 
       - name: Download AWS arm64 manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: manifest_aws_arm64.json
 
@@ -279,7 +279,7 @@ jobs:
       # ]
 
       - name: Write AWS AMI IDs to a markdown file
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require("fs");
@@ -316,17 +316,17 @@ jobs:
             fs.writeFileSync("./body.md", header.join("\n") + "\n" + toPrint.join("\n"));
 
       - name: Download GovCloud AWS x64 manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: manifest_aws_govcloud_x86_64.json
 
       - name: Download GovCloud AWS arm64 manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: manifest_aws_govcloud_arm64.json
 
       - name: Write GovCloud AWS AMI IDs to the markdown file
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require("fs");
@@ -363,7 +363,7 @@ jobs:
             fs.appendFileSync("./body.md", "\n\n" + header.join("\n") + "\n" + toPrint.join("\n"));
 
       - name: Download Google Cloud manifest
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: manifest_gcp.json
 
@@ -390,7 +390,7 @@ jobs:
         # ]
 
       - name: Write Azure and GCP AMI IDs to the markdown file
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           AZURE_VERSION: ${{ needs.azure.outputs.azure_version }}
         with:
