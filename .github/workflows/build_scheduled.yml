@@ -134,9 +134,9 @@ jobs:
       PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
-      PKR_VAR_gallery_image_name: spacelift_worker_image
+      PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
       PKR_VAR_gallery_replication_regions: '["westeurope", "northeurope", "northcentralus", "centralus", "eastus", "eastus2", "westus2", "westus3", "australiaeast", "southcentralus"]'
-      PKR_VAR_gallery_image_version: 2.0.${{ github.run_number }}
+      PKR_VAR_gallery_image_version: 3.0.${{ github.run_number }}
 
     steps:
       - name: Check out the source code
@@ -419,9 +419,9 @@ jobs:
                 "## Azure",
                 "",
                 "- Community Gallery Name | `spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079`",
-                "- Image name | `spacelift_worker_image`",
+                "- Image name | `spacelift_worker_image_ubu_lts`",
                 `- Version | \`${process.env.AZURE_VERSION}\``,
-                `- Resource ID | \`/CommunityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/Images/spacelift_worker_image/Versions/${process.env.AZURE_VERSION}\``,
+                `- Resource ID | \`/CommunityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/Images/spacelift_worker_image_ubu_lts/Versions/${process.env.AZURE_VERSION}\``,
                 "",
                 "## Google Cloud Platform",
                 "",

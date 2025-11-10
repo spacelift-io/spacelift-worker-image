@@ -71,12 +71,12 @@ variable "source_image_publisher" {
 
 variable "source_image_offer" {
   type    = string
-  default = "0001-com-ubuntu-server-focal-daily"
+  default = "ubuntu-24_04-lts"
 }
 
 variable "source_image_sku" {
   type    = string
-  default = "20_04-daily-lts-gen2"
+  default = "minimal"
 }
 
 variable "vm_size" {
