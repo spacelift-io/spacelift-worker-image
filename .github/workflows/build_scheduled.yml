@@ -224,7 +224,7 @@ jobs:
         run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: asia
-          PKR_VAR_zone: asia-northeast2-a
+          PKR_VAR_zone: asia-northeast2-b
 
       - name: GCP => Add IAM policy binding to the Compute Engine images
         run: |
