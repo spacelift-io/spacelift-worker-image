@@ -44,7 +44,7 @@ variable "suffix" {
 
 variable "machine_type" {
   type    = string
-  default = "n4-standard-2"
+  default = "n1-standard-2"
 }
 
 variable "additional_labels" {
