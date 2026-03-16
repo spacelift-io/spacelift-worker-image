@@ -35,7 +35,7 @@ jobs:
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
       PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
-      PKR_VAR_gallery_replication_regions: '["northeurope", "westeurope", "uksouth", "francecentral", "germanywestcentral", "swedencentral", "northcentralus", "centralus", "eastus", "eastus2", "southcentralus", "westus2", "westus3", "canadacentral", "brazilsouth", "southeastasia", "eastasia", "centralindia", "australiaeast"]'
+      PKR_VAR_gallery_replication_regions: '["northeurope", "westeurope", "norwayeast", "uksouth", "francecentral", "germanywestcentral", "swedencentral", "northcentralus", "centralus", "eastus", "eastus2", "southcentralus", "westus2", "westus3", "canadacentral", "brazilsouth", "southeastasia", "eastasia", "centralindia", "australiaeast"]'
       PKR_VAR_gallery_image_version: 3.0.${{ github.run_number }}
 
     steps:
