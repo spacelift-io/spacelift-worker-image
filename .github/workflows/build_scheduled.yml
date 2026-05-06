@@ -421,7 +421,7 @@ jobs:
                 "- Community Gallery Name | `spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079`",
                 "- Image name | `spacelift_worker_image_ubu_lts`",
                 `- Version | \`${process.env.AZURE_VERSION}\``,
-                `- Resource ID | \`/CommunityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/Images/spacelift_worker_image_ubu_lts/Versions/${process.env.AZURE_VERSION}\``,
+                `- Resource ID | \`/communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/${process.env.AZURE_VERSION}\``,
                 "",
                 "## Google Cloud Platform",
                 "",
