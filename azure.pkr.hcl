@@ -126,7 +126,7 @@ source "azure-arm" "spacelift" {
   image_publisher = var.source_image_publisher
   image_offer     = var.source_image_offer
   image_sku       = var.source_image_sku
-  
+
   build_resource_group_name = var.packer_work_group
 
   vm_size  = var.vm_size
@@ -153,6 +153,7 @@ build {
       "shared/scripts/gvisor.sh",
       "shared/scripts/apt-install-jq.sh",
       "azure/scripts/azure-cli.sh",
+      "azure/scripts/kmod-upgrade.sh"
     ]
 
     env = {
