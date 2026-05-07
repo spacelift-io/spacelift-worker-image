@@ -2,4 +2,4 @@
 # the algif_aead kernel module, which enables local privilege escalation to root.
 # More: https://ubuntu.com/blog/copy-fail-vulnerability-fixes-available
 
-sudo apt update && sudo apt install --only-upgrade kmod
+sudo apt-get update && sudo apt-get install -y --only-upgrade kmod
