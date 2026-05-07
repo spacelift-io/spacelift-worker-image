@@ -1,6 +1,6 @@
 # This script installs the Azure CLI
 
-sudo apt-get install \
+sudo apt-get install -y \
     ca-certificates \
     curl \
     apt-transport-https \
@@ -23,4 +23,4 @@ Architectures: $(dpkg --print-architecture)
 Signed-by: /etc/apt/keyrings/microsoft.gpg" | sudo tee /etc/apt/sources.list.d/azure-cli.sources
 
 sudo apt-get update
-sudo apt-get install azure-cli
+sudo apt-get install -y azure-cli
