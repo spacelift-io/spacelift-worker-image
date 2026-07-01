@@ -152,8 +152,7 @@ build {
       "shared/scripts/apt-install-docker.sh",
       "shared/scripts/gvisor.sh",
       "shared/scripts/apt-install-jq.sh",
-      "azure/scripts/azure-cli.sh",
-      "azure/scripts/kmod-upgrade.sh"
+      "azure/scripts/azure-cli.sh"
     ]
 
     env = {
