@@ -1,6 +1,6 @@
 resource "spacelift_worker_pool" "this" {
   name        = "ami-build-resilience-workerpool"
-  description = "EC2 pool for AMI validation (ami-resilience). Autoscaler disabled."
+  description = "EC2 pool for validating Spacelift Worker AMIs before they are published, driven by https://github.com/spacelift-io/spacelift-worker-image (ami-resilience). Autoscaler disabled."
   space_id    = "root" # else the API defaults the pool to the "legacy" space, invisible to a root stack
 }
 
