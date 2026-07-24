@@ -15,8 +15,12 @@ module "github-deployment" {
         Resource = [module.workerpool.autoscaling_group_arn]
       },
       {
-        Effect   = "Allow"
-        Action   = ["autoscaling:DescribeInstanceRefreshes", "autoscaling:DescribeAutoScalingGroups"]
+        Effect = "Allow"
+        Action = [
+          "autoscaling:DescribeInstanceRefreshes",
+          "autoscaling:DescribeAutoScalingGroups",
+          "ec2:DescribeLaunchTemplateVersions",
+        ]
         Resource = "*"
       },
     ]

@@ -106,6 +106,7 @@ jobs:
 
       - name: Resolve the pool's ASG name
         id: asg
+        shell: bash
         run: |
           set -euo pipefail
           # `.value` is double-encoded (a JSON string containing quotes), so fromjson decodes it.
@@ -121,6 +122,29 @@ jobs:
           aws-region: ${{ env.TEST_REGION }}
           role-to-assume: ${{ vars.PRIVATE_WORKER_POOL_AWS_ROLE_TO_ASSUME }}
           role-duration-seconds: 3600
+
+      - name: Verify the ASG launch template is on the new AMI
+        # Sanity check before cycling: resolve the exact launch-template version the
+        # ASG references and confirm its ImageId is the AMI we just built, so we know
+        # the instance refresh will actually test the new image and not an old one.
+        env:
+          ASG_NAME: ${{ steps.asg.outputs.asg_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          lt=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].LaunchTemplate.[LaunchTemplateId,Version]' --output text)
+          lt_id=$(printf '%s' "$lt" | cut -f1)
+          lt_ver=$(printf '%s' "$lt" | cut -f2)
+          
+          lt_ami=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id "$lt_id" --versions "$lt_ver" \
+            --query 'LaunchTemplateVersions[0].LaunchTemplateData.ImageId' --output text)
+          
+          echo "LT $lt_id v$lt_ver -> $lt_ami (expected $NEW_AMI)"
+          [ "$lt_ami" = "$NEW_AMI" ] || { echo "ASG launch template is NOT on the new AMI" >&2; exit 1; }
 
       - name: Cycle the worker onto the new AMI (ASG instance refresh)
         uses: spacelift-io/public-shared-actions/actions/refresh-workerpool-asg@main
