@@ -98,8 +98,8 @@ jobs:
       - name: Point the workerpool stack at the new AMI
         run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_ami_id "$NEW_AMI"
 
-      - name: Apply the workerpool stack (updates the launch template)
-        run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
+#      - name: Apply the workerpool stack (updates the launch template)
+#        run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
 
       - name: Resolve the pool's ASG name
         id: asg
