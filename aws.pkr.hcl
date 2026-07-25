@@ -7,7 +7,7 @@ packer {
 
     amazon-ami-management = {
       version = "= 1.6.1"
-      source = "github.com/wata727/amazon-ami-management"
+      source  = "github.com/wata727/amazon-ami-management"
     }
   }
 }
@@ -42,7 +42,7 @@ variable "ami_regions" {
 }
 
 variable "source_ami_architecture" {
-  type = string
+  type    = string
   default = "x86_64"
 }
 
@@ -54,6 +54,12 @@ variable "source_ami_owners" {
 variable "ami_groups" {
   type    = list(string)
   default = ["all"]
+}
+
+variable "ami_users" {
+  type        = list(string)
+  description = "AWS account IDs to share the (private) AMI with as an explicit launch permission."
+  default     = []
 }
 
 variable "instance_type" {
@@ -93,26 +99,27 @@ variable "vpc_id" {
 
 source "amazon-ebs" "spacelift" {
   source_ami_filter {
-      filters = {
-        virtualization-type = "hvm"
-        name                = "al2023-ami-minimal-*-kernel-6.1-${var.source_ami_architecture}"
-        root-device-type    = "ebs"
-        architecture        = var.source_ami_architecture
-      }
-      owners      = var.source_ami_owners
-      most_recent = true
+    filters = {
+      virtualization-type = "hvm"
+      name                = "al2023-ami-minimal-*-kernel-6.1-${var.source_ami_architecture}"
+      root-device-type    = "ebs"
+      architecture        = var.source_ami_architecture
+    }
+    owners      = var.source_ami_owners
+    most_recent = true
   }
 
   launch_block_device_mappings {
-    device_name = "/dev/xvda"
-    volume_size = 8
-    volume_type = "gp3"
+    device_name           = "/dev/xvda"
+    volume_size           = 8
+    volume_type           = "gp3"
     delete_on_termination = true
   }
 
-  ami_name    = "${var.ami_name_prefix}-${var.source_ami_architecture}"
-  ami_regions = var.ami_regions
-  ami_groups  = var.ami_groups
+  ami_name        = "${var.ami_name_prefix}-${var.source_ami_architecture}"
+  ami_regions     = var.ami_regions
+  ami_groups      = var.ami_groups
+  ami_users       = var.ami_users
   ami_description = <<EOT
 Spacelift AMI built for ${var.source_ami_architecture}-based private worker pools.
 It contains all the neccessary tools to run Spacelift workers.

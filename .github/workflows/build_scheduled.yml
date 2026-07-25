@@ -22,48 +22,21 @@ jobs:
     needs: timestamp
     strategy:
       matrix:
-        arch: [x86_64, arm64]
-    name: Build the AWS AMI using Packer
-    runs-on: ubuntu-latest
+        include:
+          - arch: x86_64
+            instance_type: t3.micro
+          - arch: arm64
+            instance_type: t4g.micro
+    name: Build/test/publish AWS AMI (${{ matrix.arch }})
     permissions:
       id-token: write
       contents: read
-    steps:
-      - name: Check out the source code
-        uses: actions/checkout@main
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          role-duration-seconds: 3600
-
-      - name: Setup packer
-        uses: hashicorp/setup-packer@main
-        with:
-          version: latest
-
-      - name: Initialize Packer
-        run: packer init aws.pkr.hcl
-        env:
-          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
-
-      - name: Build the AWS AMI using Packer (${{ matrix.arch }})
-        # We only run the cleanup postprocessor for one of them, to avoid race conditions
-        run: packer build ${{ matrix.arch == 'x86_64' && '--except=amazon-ami-management' || '' }} aws.pkr.hcl
-        env:
-          PKR_VAR_encrypt_boot: false
-          PKR_VAR_ami_name_prefix: spacelift-${{ needs.timestamp.outputs.timestamp }}
-          PKR_VAR_source_ami_architecture: ${{ matrix.arch }}
-          PKR_VAR_instance_type: ${{ matrix.arch == 'x86_64' && 't3.micro' || 't4g.micro' }}
-
-      - name: Upload manifest
-        uses: actions/upload-artifact@v7
-        with:
-          path: manifest_aws_${{ matrix.arch }}.json
-          name: manifest_aws_${{ matrix.arch }}.json
-          retention-days: 5
+    uses: ./.github/workflows/job_build_publish-aws.yml
+    secrets: inherit
+    with:
+      arch: ${{ matrix.arch }}
+      instance_type: ${{ matrix.instance_type }}
+      timestamp: ${{ needs.timestamp.outputs.timestamp }}
 
   aws-govcloud:
     # Since we run in parallel, let's make sure we use the same timestamp for all jobs
