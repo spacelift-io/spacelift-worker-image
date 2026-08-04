@@ -1,6 +1,6 @@
 resource "spacelift_worker_pool" "this" {
   name        = "ami-build-resilience-workerpool-gov"
-  description = "GovCloud EC2 pool for validating Spacelift GovCloud Worker AMIs before they are published, driven by https://github.com/spacelift-io/spacelift-worker-image (ami-resilience). Runs in test account 259242304461, registers with commercial preprod. Autoscaler disabled."
+  description = "GovCloud EC2 pool for validating Spacelift GovCloud Worker AMIs before they are published, driven by https://github.com/spacelift-io/spacelift-worker-image (ami-resilience). Runs in test account 259242304461, registers with commercial preprod."
   space_id    = "root" # else the API defaults the pool to the "legacy" space, invisible to a root stack
 }
 
