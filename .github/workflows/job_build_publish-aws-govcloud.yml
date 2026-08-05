@@ -68,7 +68,6 @@ jobs:
           PKR_VAR_ami_regions: '["us-gov-east-1", "us-gov-west-1"]'
           PKR_VAR_source_ami_architecture: ${{ inputs.arch }}
           PKR_VAR_instance_type: ${{ inputs.instance_type }}
-          # Build PRIVATE (ami_groups=[]); the publish job makes it public only after the test passes.
           PKR_VAR_ami_groups: "[]"
           PKR_VAR_ami_users: '["${{ env.TEST_AWS_ACCOUNT_ID }}"]'
 
@@ -101,12 +100,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      SPACELIFT_API_KEY_ID: ${{ secrets.SPACELIFT_API_KEY_ID }}
-      SPACELIFT_API_KEY_SECRET: ${{ secrets.SPACELIFT_API_KEY_SECRET }}
+      SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
       NEW_AMI: ${{ needs.build.outputs.test_ami }}
     steps:
       - name: Setup spacectl
         uses: spacelift-io/setup-spacectl@main
+
+      - name: Authenticate to Spacelift via OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Declare/assign separately so `set -e` catches a failed token fetch (SC2155).
+          SPACELIFT_API_KEY_SECRET=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
+          export SPACELIFT_API_KEY_SECRET
+          token=$(spacectl profile export-token)
+          echo "::add-mask::$token"
+          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
 
       - name: Point the workerpool stack at the new AMI
         run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_ami_id "$NEW_AMI"
@@ -134,9 +145,6 @@ jobs:
           role-duration-seconds: 3600
 
       - name: Verify the ASG launch template is on the new AMI
-        # Sanity check before cycling: resolve the exact launch-template version the
-        # ASG references and confirm its ImageId is the AMI we just built, so we know
-        # the instance refresh will actually test the new image and not an old one.
         env:
           ASG_NAME: ${{ steps.asg.outputs.asg_name }}
         shell: bash
@@ -170,8 +178,6 @@ jobs:
   publish:
     name: Publish in both gov regions
     needs: [build, test]
-    # Publish once the build succeeded and the test either passed or was skipped
-    # (arm64 skips the x86_64-only pool test). Do NOT publish if the test failed.
     if: ${{ always() && needs.build.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
     env:
