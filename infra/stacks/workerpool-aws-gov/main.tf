@@ -7,9 +7,6 @@ resource "spacelift_worker_pool" "this" {
 module "workerpool" {
   source = "github.com/spacelift-io/terraform-aws-spacelift-workerpool-on-ec2?ref=v7.2.0"
 
-  # The module resolves the AMI owner by partition (092348861888 for aws-us-gov) and
-  # builds every ARN/service-principal from data.aws_partition, so it runs unmodified
-  # in GovCloud. We inject the exact AMI under test rather than relying on name_regex.
   binaries_download_base_url = "https://downloads.spacelift.dev"
   base_name                  = "ci-workerpool-aws-gov"
   worker_pool_id             = spacelift_worker_pool.this.id
