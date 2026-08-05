@@ -90,12 +90,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      SPACELIFT_API_KEY_ID: ${{ secrets.SPACELIFT_API_KEY_ID }}
-      SPACELIFT_API_KEY_SECRET: ${{ secrets.SPACELIFT_API_KEY_SECRET }}
+      # OIDC-based API key. The var holds the full `oidc::<host>::<key-id>` value.
+      SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
       NEW_AMI: ${{ needs.build.outputs.test_ami }}
     steps:
       - name: Setup spacectl
         uses: spacelift-io/setup-spacectl@main
+
+      - name: Authenticate to Spacelift via OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          SPACELIFT_API_KEY_SECRET=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
+          export SPACELIFT_API_KEY_SECRET
+          token=$(spacectl profile export-token)
+          echo "::add-mask::$token"
+          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
 
       - name: Point the workerpool stack at the new AMI
         run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_ami_id "$NEW_AMI"
