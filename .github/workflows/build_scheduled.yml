@@ -39,6 +39,7 @@ jobs:
       timestamp: ${{ needs.timestamp.outputs.timestamp }}
 
   aws-govcloud:
+    # Since we run in parallel, let's make sure we use the same timestamp for all jobs
     needs: timestamp
     strategy:
       matrix:

@@ -16,10 +16,6 @@ on:
 
 name: Build, test and publish AWS GovCloud AMI
 
-# GovCloud twin of job_build_publish-aws.yml. Builds private in the gov build
-# account (092348861888), validates on the gov test pool (account 259242304461,
-# registered in commercial preprod), then publishes public. See
-# tasks/ami-resilience/gov-workflow-plan.md.
 env:
   TEST_REGION: us-gov-west-1
   TEST_AWS_ACCOUNT_ID: "259242304461"
