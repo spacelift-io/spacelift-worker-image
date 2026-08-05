@@ -15,18 +15,13 @@ terraform {
   }
 }
 
-# Manages the worker pool in commercial preprod. In-Spacelift runs use the
-# auto-injected SPACELIFT_API_TOKEN; the stack's role must allow managing worker pools.
 provider "spacelift" {}
 
-# GovCloud test account 259242304461, us-gov-west-1.
-#
+
 # The standard Spacelift AWS cloud integration assumes a role FROM Spacelift's
-# commercial account (324880187172); cross-partition sts:AssumeRole is unsupported,
+# commercial account; cross-partition sts:AssumeRole is unsupported,
 # so it cannot reach GovCloud.
-# Uses Spacelift OIDC federation (no long-lived keys). Register Spacelift
-# as an IAM OIDC provider in 259242304461 (issuerhttps://spacelift-ci-gh.app.spacelift.dev)
-# create a deployer role trusting it, and assume it via web identity below.
+# Uses Spacelift OIDC federation (no long-lived keys).
 provider "aws" {
   region = "us-gov-west-1"
 
