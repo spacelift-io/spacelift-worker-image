@@ -109,17 +109,19 @@ jobs:
       - name: Apply the workerpool stack (updates the VMSS model)
         run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
 
-      - name: Resolve the pool's VMSS name
-        id: vmss
+      - name: Resolve the pool's VMSS name and worker-pool id
+        id: pool
         shell: bash
         run: |
           set -euo pipefail
           # `.value` is double-encoded (a JSON string containing quotes), so fromjson decodes it.
-          vmss=$(spacectl stack outputs --id "$WORKERPOOL_STACK" --output json \
-            | jq -r '.[] | select(.id=="vmss_name") | .value | fromjson')
-          [ -n "$vmss" ] || { echo "vmss_name output not found" >&2; exit 1; }
+          out=$(spacectl stack outputs --id "$WORKERPOOL_STACK" --output json)
+          vmss=$(echo "$out" | jq -r '.[] | select(.id=="vmss_name")      | .value | fromjson')
+          pid=$(echo "$out"  | jq -r '.[] | select(.id=="worker_pool_id") | .value | fromjson')
+          [ -n "$vmss" ] && [ -n "$pid" ] || { echo "vmss_name/worker_pool_id output not found" >&2; exit 1; }
           echo "vmss_name=$vmss" >> "$GITHUB_OUTPUT"
-          echo "VMSS: $vmss"
+          echo "pool_id=$pid"    >> "$GITHUB_OUTPUT"
+          echo "VMSS: $vmss  pool: $pid"
 
       - name: Log in to Azure (Test subscription) via OIDC
         uses: azure/login@v2
@@ -128,9 +130,18 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ env.TEST_SUBSCRIPTION_ID }}
 
+      - name: Snapshot the pool's worker IDs before reimage
+        id: before
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[.[].id] | join(",")')
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+          echo "workers before reimage: [$ids]"
+
       - name: Cycle the worker onto the new image (reimage the VMSS instance)
         env:
-          VMSS_NAME: ${{ steps.vmss.outputs.vmss_name }}
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -139,7 +150,64 @@ jobs:
           az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
           az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
 
-      - name: Run the test stack (waits for the reimaged worker to pick it up)
+      - name: Wait for the reimaged instance to be ready
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
+              --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
+            latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
+              --query "[?instanceId=='0'].latestModelApplied | [0]" -o tsv || true)
+            echo "instance provisioning=$prov latestModelApplied=$latest"
+            [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
+            sleep 10
+          done
+          echo "instance did not reach succeeded / latest-model in time" >&2
+          exit 1
+
+      - name: Assert the VMSS is on the new image version (fail the gate if not)
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          got=$(az vmss show -g "$TEST_RG" -n "$VMSS_NAME" \
+            --query "virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId" -o tsv)
+          echo "VMSS image: $got"
+          [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the new image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
+
+      - name: Wait for the reimaged worker (new, idle) and the old one gone
+        env:
+          BEFORE: ${{ steps.before.outputs.ids }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pool_id='${{ steps.pool.outputs.pool_id }}'
+          for _ in $(seq 1 60); do
+            json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
+            # A fresh worker: id NOT in the pre-reimage snapshot AND not busy.
+            new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
+              ($before | split(",")) as $old
+              | [ .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
+              | .[0] // empty')
+            # Any pre-reimage (old) worker still registered? Must reach 0 to avoid running on it.
+            old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
+              ($before | split(",")) as $old
+              | [ .[] | select(.id as $i | $old | index($i)) ] | length')
+            echo "new_idle=[$new_idle] old_still_present=$old_left"
+            if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
+              echo "reimaged worker $new_idle is idle and pre-reimage workers are gone"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "timed out waiting for the reimaged worker to register cleanly" >&2
+          exit 1
+
+      - name: Run the test stack (guaranteed on the new-image worker)
         run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
 
   publish:
