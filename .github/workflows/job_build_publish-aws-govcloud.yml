@@ -18,7 +18,7 @@ name: Build, test and publish AWS GovCloud AMI
 
 env:
   TEST_REGION: us-gov-west-1
-  TEST_AWS_ACCOUNT_ID: "259242304461"
+  TEST_AWS_ACCOUNT_ID: "259242304461" # AWS GovCloud Sandbox test account
   SPACELIFT_API_KEY_ENDPOINT: https://spacelift-ci-gh.app.spacelift.dev
   WORKERPOOL_STACK: ami-build-resilience-workerpool-aws-gov
   TEST_STACK: ami-resilience-testing-gov-aws
@@ -174,7 +174,9 @@ jobs:
   publish:
     name: Publish in both gov regions
     needs: [build, test]
-    if: ${{ always() && needs.build.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    # Publish once the build succeeded and the test passed. arm64 has no x86_64
+    # test pool, so it is waved through explicitly;
+    if: ${{ always() && needs.build.result == 'success' && (needs.test.result == 'success' || inputs.arch == 'arm64') }}
     runs-on: ubuntu-latest
     env:
       ARCH: ${{ inputs.arch }}

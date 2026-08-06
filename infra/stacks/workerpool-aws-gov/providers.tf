@@ -7,9 +7,7 @@ terraform {
       version = "~> 1.0"
     }
     aws = {
-      source = "hashicorp/aws"
-      # >= 6.40, < 7.0 — the autoscaling submodule (v9.3.0) requires aws >= 6.56.0,
-      # which the tighter "~> 6.40.0" (< 6.41.0) cap would exclude on a fresh init.
+      source  = "hashicorp/aws"
       version = "~> 6.40"
     }
   }
