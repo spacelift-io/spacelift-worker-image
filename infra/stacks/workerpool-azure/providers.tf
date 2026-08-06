@@ -21,17 +21,12 @@ terraform {
 # credentials are needed. The stack's role must allow managing worker pools.
 provider "spacelift" {}
 
-# Auth to Azure via Spacelift OIDC federated into a user-assigned managed identity
-# (a classic Azure cloud integration needs Entra admin consent, which we avoid).
-# ARM_CLIENT_ID (the MI's client id), ARM_TENANT_ID and ARM_SUBSCRIPTION_ID are set
-# as stack environment variables.
+# Auth to Azure via the attached Spacelift Azure cloud integration, which injects
+# ARM_CLIENT_ID / ARM_CLIENT_SECRET / ARM_TENANT_ID / ARM_SUBSCRIPTION_ID into the run.
 provider "azurerm" {
   features {}
 
-  use_oidc             = true
-  oidc_token_file_path = "/mnt/workspace/spacelift.oidc"
-
-  # The managed identity is not granted rights to register resource providers;
-  # the Test subscription already has Microsoft.Compute/Network registered.
+  # The integration's service principal is not granted rights to register resource
+  # providers; the Test subscription already has Microsoft.Compute/Network registered.
   resource_provider_registrations = "none"
 }
