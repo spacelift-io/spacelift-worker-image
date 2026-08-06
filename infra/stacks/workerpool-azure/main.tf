@@ -22,9 +22,11 @@ module "azure-worker" {
   # Launcher is pulled from downloads.<domain_name>; preprod lives on spacelift.dev.
   domain_name = "spacelift.dev"
 
-  # Keep a mis-bootstrapped VM up (instead of the default Reboot crash-loop) so a
-  # broken image can be investigated during bring-up.
   process_exit_behavior = "Reboot"
+
+  # Skip apt unattended-upgrade on boot: it adds minutes to every boot, which slows
+  # the reimage/cycle step in the test gate. The image under test is what we validate.
+  perform_unattended_upgrade_on_boot = false
 
   configuration = <<-EOT
     export SPACELIFT_TOKEN=${spacelift_worker_pool.this.config}
