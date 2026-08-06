@@ -24,12 +24,13 @@ module "azure-worker" {
 
   # Keep a mis-bootstrapped VM up (instead of the default Reboot crash-loop) so a
   # broken image can be investigated during bring-up.
-  process_exit_behavior = "None"
+  process_exit_behavior = "Reboot"
 
   configuration = <<-EOT
     export SPACELIFT_TOKEN=${spacelift_worker_pool.this.config}
     export SPACELIFT_POOL_PRIVATE_KEY=${spacelift_worker_pool.this.private_key}
-    export SPACELIFT_WORKER_COMMS_PROTOCOL=poll
+    export SPACELIFT_WORKER_COMMS_PROTOCOL="poll"
+    export SPACELIFT_WORKER_COMMS_URL="https://app.spacelift.dev"
   EOT
 
   tags = {
