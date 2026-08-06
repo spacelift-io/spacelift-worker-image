@@ -94,54 +94,12 @@ jobs:
           retention-days: 5
 
   azure:
-    name: Build Azure AMI using Packer
-    runs-on: ubuntu-latest
+    name: Build/test/publish Azure image
     permissions:
       id-token: write
       contents: read
-    env:
-      PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
-      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
-      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
-      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
-      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
-      PKR_VAR_gallery_name: spacelift_worker_images_public
-      PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
-      PKR_VAR_gallery_replication_regions: '["northeurope", "westeurope", "norwayeast", "uksouth", "francecentral", "germanywestcentral", "swedencentral", "northcentralus", "centralus", "eastus", "eastus2", "southcentralus", "westus2", "westus3", "canadacentral", "brazilsouth", "southeastasia", "eastasia", "centralindia", "australiaeast"]'
-      PKR_VAR_gallery_image_version: 3.0.${{ github.run_number }}
-
-    steps:
-      - name: Check out the source code
-        uses: actions/checkout@main
-
-      - name: Setup packer
-        uses: hashicorp/setup-packer@main
-        with:
-          version: latest
-
-      - name: Initialize Packer
-        run: packer init azure.pkr.hcl
-        env:
-          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
-
-      - name: Azure => Build the AMI using Packer
-        run: packer build azure.pkr.hcl
-
-      - name: Upload manifest
-        uses: actions/upload-artifact@v7
-        with:
-          path: manifest_azure.json
-          name: manifest_azure.json
-          retention-days: 5
-
-      - name: Export Azure version number
-        id: export_azure_version
-        run: |
-          echo "azure_version=$PKR_VAR_gallery_image_version" >> $GITHUB_OUTPUT
-
-    outputs:
-      azure_version: ${{ steps.export_azure_version.outputs.azure_version }}
+    uses: ./.github/workflows/job_build_publish-azure.yml
+    secrets: inherit
 
   gcp:
     name: Build GCP AMI using Packer

@@ -1,0 +1,168 @@
+on:
+  workflow_call:
+    outputs:
+      azure_version:
+        description: "The published gallery image version."
+        value: ${{ jobs.build.outputs.azure_version }}
+
+name: Build, test and publish Azure image
+
+env:
+  SPACELIFT_API_KEY_ENDPOINT: https://spacelift-ci-gh.app.spacelift.dev
+  WORKERPOOL_STACK: ami-build-resilience-workerpool-azure
+  TEST_STACK: ami-resilience-testing-azure
+  # sp-packer app (the build identity; also has Virtual Machine Contributor on the test pool RG).
+  AZURE_CLIENT_ID: "976e4a6e-c619-417e-9add-50e2d674e2db"
+  # Test subscription that hosts the worker-pool VMSS (distinct from the build/gallery sub).
+  TEST_SUBSCRIPTION_ID: "00eb57d2-b059-4e1f-ac2d-c10400a2cf24"
+  TEST_RG: rg-ami-resilience-azure
+  # Public compute gallery (exposed to customers via the community gallery).
+  GALLERY_RG: rg-worker_images-public-westeurope
+  GALLERY_NAME: spacelift_worker_images_public
+  GALLERY_IMAGE: spacelift_worker_image_ubu_lts
+  COMMUNITY_GALLERY: spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079
+
+jobs:
+  build:
+    name: Build the Azure image (excluded from latest)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
+      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
+      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_gallery_name: spacelift_worker_images_public
+      PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
+      PKR_VAR_gallery_replication_regions: '["northeurope", "westeurope", "norwayeast", "uksouth", "francecentral", "germanywestcentral", "swedencentral", "northcentralus", "centralus", "eastus", "eastus2", "southcentralus", "westus2", "westus3", "canadacentral", "brazilsouth", "southeastasia", "eastasia", "centralindia", "australiaeast"]'
+      PKR_VAR_gallery_image_version: 3.0.${{ github.run_number }}
+      # Publish excluded from 'latest' so customers who track 'latest' never see the
+      # untested version. Promoted (flag cleared) only after the on-pool test passes.
+      PKR_VAR_exclude_from_latest: true
+    outputs:
+      azure_version: ${{ steps.export_azure_version.outputs.azure_version }}
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init azure.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
+
+      - name: Build the Azure image (PRIVATE — excluded from latest)
+        run: packer build azure.pkr.hcl
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v7
+        with:
+          path: manifest_azure.json
+          name: manifest_azure.json
+          retention-days: 5
+
+      - name: Export Azure version number
+        id: export_azure_version
+        run: echo "azure_version=$PKR_VAR_gallery_image_version" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Cycle the pool onto the new image and run the test stack
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
+      # The exact just-built version, pinned via the community gallery (it is excluded
+      # from 'latest' but still deployable by explicit version).
+      NEW_IMAGE: /communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/3.0.${{ github.run_number }}
+    steps:
+      - name: Setup spacectl
+        uses: spacelift-io/setup-spacectl@main
+
+      - name: Authenticate to Spacelift via OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Declare/assign separately so `set -e` catches a failed token fetch (SC2155).
+          SPACELIFT_API_KEY_SECRET=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
+          export SPACELIFT_API_KEY_SECRET
+          token=$(spacectl profile export-token)
+          echo "::add-mask::$token"
+          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Point the workerpool stack at the new image
+        run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_source_image_id "$NEW_IMAGE"
+
+      - name: Apply the workerpool stack (updates the VMSS model)
+        run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
+
+      - name: Resolve the pool's VMSS name
+        id: vmss
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `.value` is double-encoded (a JSON string containing quotes), so fromjson decodes it.
+          vmss=$(spacectl stack outputs --id "$WORKERPOOL_STACK" --output json \
+            | jq -r '.[] | select(.id=="vmss_name") | .value | fromjson')
+          [ -n "$vmss" ] || { echo "vmss_name output not found" >&2; exit 1; }
+          echo "vmss_name=$vmss" >> "$GITHUB_OUTPUT"
+          echo "VMSS: $vmss"
+
+      - name: Log in to Azure (Test subscription) via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.TEST_SUBSCRIPTION_ID }}
+
+      - name: Cycle the worker onto the new image (reimage the VMSS instance)
+        env:
+          VMSS_NAME: ${{ steps.vmss.outputs.vmss_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Manual upgrade mode: apply the latest model to the instance, then reimage so it
+          # re-provisions (re-runs cloud-init) on the new image and re-registers the worker.
+          az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+          az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+
+      - name: Run the test stack (waits for the reimaged worker to pick it up)
+        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
+
+  publish:
+    name: Promote the image to 'latest'
+    needs: [build, test]
+    # Promote only if the build succeeded AND the on-pool test passed. On test failure the
+    # version stays excluded from 'latest' — customers tracking 'latest' never receive it.
+    if: ${{ always() && needs.build.result == 'success' && needs.test.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Log in to Azure (build/gallery subscription) via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Clear excludeFromLatest (promote to latest)
+        run: |
+          az sig image-version update \
+            -g "$GALLERY_RG" -r "$GALLERY_NAME" -i "$GALLERY_IMAGE" \
+            -e "${{ needs.build.outputs.azure_version }}" \
+            --set publishingProfile.excludeFromLatest=false
