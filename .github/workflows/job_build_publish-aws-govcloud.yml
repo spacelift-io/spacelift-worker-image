@@ -1,0 +1,209 @@
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: "Source AMI architecture (x86_64 or arm64)."
+        type: string
+        required: true
+      instance_type:
+        description: "EC2 instance type used to build this arch's AMI."
+        type: string
+        required: true
+      timestamp:
+        description: "Unified build timestamp; drives the spacelift-<timestamp> AMI name."
+        type: string
+        required: true
+
+name: Build, test and publish AWS GovCloud AMI
+
+env:
+  TEST_REGION: us-gov-west-1
+  TEST_AWS_ACCOUNT_ID: "259242304461" # AWS GovCloud Sandbox test account
+  SPACELIFT_API_KEY_ENDPOINT: https://spacelift-ci-gh.app.spacelift.dev
+  WORKERPOOL_STACK: ami-build-resilience-workerpool-aws-gov
+  TEST_STACK: ami-resilience-testing-gov-aws
+
+jobs:
+  build:
+    name: Build private GovCloud AMI (${{ inputs.arch }}, both gov regions)
+    runs-on: ubuntu-latest
+    env:
+      ARCH: ${{ inputs.arch }}
+    outputs:
+      test_ami: ${{ steps.extract.outputs.test_ami }}
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Configure GovCloud AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
+          role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init aws.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+
+      - name: Build the GovCloud AMI (PRIVATE)
+        # Run the amazon-ami-management cleanup post-processor for exactly one arch
+        # (skip it on x86_64) so the two matrix legs don't race on AMI deregistration.
+        run: packer build ${{ inputs.arch == 'x86_64' && '--except=amazon-ami-management' || '' }} aws.pkr.hcl
+        env:
+          PKR_VAR_encrypt_boot: false
+          PKR_VAR_ami_name_prefix: spacelift-${{ inputs.timestamp }}
+          PKR_VAR_source_ami_owners: '["045324592363"]'
+          PKR_VAR_region: us-gov-east-1
+          PKR_VAR_ami_regions: '["us-gov-east-1", "us-gov-west-1"]'
+          PKR_VAR_source_ami_architecture: ${{ inputs.arch }}
+          PKR_VAR_instance_type: ${{ inputs.instance_type }}
+          PKR_VAR_ami_groups: "[]"
+          PKR_VAR_ami_users: '["${{ env.TEST_AWS_ACCOUNT_ID }}"]'
+
+      - name: Extract the test-region AMI id
+        id: extract
+        run: |
+          set -euo pipefail
+          ami=$(jq -r '.builds[-1].artifact_id' "manifest_aws_${ARCH}.json" \
+            | tr ',' '\n' | grep "^${TEST_REGION}:" | cut -d: -f2)
+          [ -n "$ami" ] || { echo "no AMI for ${TEST_REGION} in manifest" >&2; exit 1; }
+          echo "test_ami=$ami" >> "$GITHUB_OUTPUT"
+          echo "Built ${TEST_REGION} AMI: $ami"
+
+      - name: Rename the manifest file
+        run: mv "manifest_aws_${ARCH}.json" "manifest_aws_govcloud_${ARCH}.json"
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest_aws_govcloud_${{ inputs.arch }}.json
+          path: manifest_aws_govcloud_${{ inputs.arch }}.json
+          retention-days: 5
+
+  test:
+    name: Deploy pool onto new AMI and run the test stack
+    needs: build
+    # The test pool is x86_64 (t3.small); an arm64 AMI can't launch on it. arm64
+    # builds and publishes without the on-pool test for now.
+    if: ${{ inputs.arch == 'x86_64' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
+      NEW_AMI: ${{ needs.build.outputs.test_ami }}
+    steps:
+      - name: Setup spacectl
+        uses: spacelift-io/setup-spacectl@main
+
+      - name: Authenticate to Spacelift via OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Declare/assign separately so `set -e` catches a failed token fetch (SC2155).
+          SPACELIFT_API_KEY_SECRET=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
+          export SPACELIFT_API_KEY_SECRET
+          token=$(spacectl profile export-token)
+          echo "::add-mask::$token"
+          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Point the workerpool stack at the new AMI
+        run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_ami_id "$NEW_AMI"
+
+      - name: Apply the workerpool stack (updates the launch template)
+        run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
+
+      - name: Resolve the pool's ASG name
+        id: asg
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `.value` is double-encoded (a JSON string containing quotes), so fromjson decodes it.
+          asg=$(spacectl stack outputs --id "$WORKERPOOL_STACK" --output json \
+            | jq -r '.[] | select(.id=="asg_name") | .value | fromjson')
+          [ -n "$asg" ] || { echo "asg_name output not found" >&2; exit 1; }
+          echo "asg_name=$asg" >> "$GITHUB_OUTPUT"
+          echo "ASG: $asg"
+
+      - name: Configure GovCloud AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.TEST_REGION }}
+          role-to-assume: ${{ vars.GOVCLOUD_PRIVATE_WORKER_POOL_AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 3600
+
+      - name: Verify the ASG launch template is on the new AMI
+        env:
+          ASG_NAME: ${{ steps.asg.outputs.asg_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          lt=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].LaunchTemplate.[LaunchTemplateId,Version]' --output text)
+          lt_id=$(printf '%s' "$lt" | cut -f1)
+          lt_ver=$(printf '%s' "$lt" | cut -f2)
+
+          lt_ami=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id "$lt_id" --versions "$lt_ver" \
+            --query 'LaunchTemplateVersions[0].LaunchTemplateData.ImageId' --output text)
+
+          echo "LT $lt_id v$lt_ver -> $lt_ami (expected $NEW_AMI)"
+          [ "$lt_ami" = "$NEW_AMI" ] || { echo "ASG launch template is NOT on the new AMI" >&2; exit 1; }
+
+      - name: Cycle the worker onto the new AMI (ASG instance refresh)
+        uses: spacelift-io/public-shared-actions/actions/refresh-workerpool-asg@main
+        with:
+          asg_name: ${{ steps.asg.outputs.asg_name }}
+          aws_region: ${{ env.TEST_REGION }}
+          min_healthy_percentage: 0
+          instance_warmup_seconds: 0
+
+      - name: Run the test stack
+        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
+
+  publish:
+    name: Publish in both gov regions
+    needs: [build, test]
+    # Publish once the build succeeded and the test passed. arm64 has no x86_64
+    # test pool, so it is waved through explicitly;
+    if: ${{ always() && needs.build.result == 'success' && (needs.test.result == 'success' || inputs.arch == 'arm64') }}
+    runs-on: ubuntu-latest
+    env:
+      ARCH: ${{ inputs.arch }}
+    steps:
+      - name: Configure GovCloud AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ secrets.GOVCLOUD_AWS_REGION }}
+          role-to-assume: ${{ secrets.GOVCLOUD_AWS_ROLE_ARN }}
+          role-duration-seconds: 3600
+
+      - name: Download manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: manifest_aws_govcloud_${{ env.ARCH }}.json
+
+      - name: Make each region's AMI public
+        run: |
+          set -euo pipefail
+          # Make the AMI public and, in the same call, drop the now-redundant explicit
+          # share to the testing account (added at build time via ami_users). Once the
+          # image is public the grant does nothing — this is hygiene, so a customer-facing
+          # public AMI carries no stray internal-account launch permission.
+          for pair in $(jq -r '.builds[-1].artifact_id' "manifest_aws_govcloud_${ARCH}.json" | tr ',' '\n'); do
+            region="${pair%%:*}"
+            ami="${pair##*:}"
+            echo "Publishing $ami in $region"
+            aws ec2 modify-image-attribute --region "$region" --image-id "$ami" \
+              --launch-permission "Add=[{Group=all}],Remove=[{UserId=${TEST_AWS_ACCOUNT_ID}}]"
+          done
