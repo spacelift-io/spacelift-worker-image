@@ -4,7 +4,7 @@ name: TEST — Azure build + on-pool test (no publish)
 # end to end (build excluded-from-latest -> cycle the pool onto it -> run the test
 # stack). It does NOT publish/promote. Uses a 0.0.<run> version that is both
 # excluded from latest AND lower than the real 3.0.x line, so it can never become
-# 'latest' even if something regresses. Delete before merging to main.
+# 'latest' even if something regresses.
 
 on:
   pull_request:
