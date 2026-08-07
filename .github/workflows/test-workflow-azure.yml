@@ -187,5 +187,5 @@ jobs:
           echo "timed out waiting for the reimaged worker to register cleanly" >&2
           exit 1
 
-      - name: Run the test stack (guaranteed on the new-image worker)
+      - name: Run the test stack
         run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
