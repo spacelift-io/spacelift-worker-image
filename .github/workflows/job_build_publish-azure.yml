@@ -130,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[.[].id] | join(",")')
+          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[ (. // []) | .[].id ] | join(",")')
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
           echo "workers before reimage: [$ids]"
 
@@ -193,13 +193,13 @@ jobs:
             # A fresh worker: id NOT in the pre-reimage snapshot AND not busy.
             new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
               ($before | split(",")) as $old
-              | [ .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
+              | [ (. // []) | .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
               | .[0] // empty')
           
             # Any pre-reimage (old) worker still registered? Must reach 0 to avoid running on it.
             old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
               ($before | split(",")) as $old
-              | [ .[] | select(.id as $i | $old | index($i)) ] | length')
+              | [ (. // []) | .[] | select(.id as $i | $old | index($i)) ] | length')
             echo "new_idle=[$new_idle] old_still_present=$old_left"
           
             if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
