@@ -27,7 +27,6 @@ jobs:
     name: Build the Azure image (excluded from latest)
     runs-on: ubuntu-latest
     env:
-      PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
       PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
       PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
@@ -57,6 +56,9 @@ jobs:
           PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Build the Azure image (PRIVATE — excluded from latest)
+        # Single source of truth for the SP client id (job-level env can't reference the env context).
+        env:
+          PKR_VAR_client_id: ${{ env.AZURE_CLIENT_ID }}
         run: packer build azure.pkr.hcl
 
       - name: Export Azure version number
@@ -70,7 +72,7 @@ jobs:
     timeout-minutes: 40
     env:
       SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
-      NEW_IMAGE: /communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/0.0.${{ github.run_number }}
+      NEW_IMAGE: /communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/${{ needs.build.outputs.azure_version }}
     steps:
       - name: Setup spacectl
         uses: spacelift-io/setup-spacectl@main
@@ -87,9 +89,6 @@ jobs:
           token=$(spacectl profile export-token)
           echo "::add-mask::$token"
           echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
-
-      - name: Keep the workerpool stack's image var in sync (no apply — az does the swap)
-        run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_source_image_id "$NEW_IMAGE"
 
       - name: Resolve the pool's VMSS name and worker-pool id
         id: pool
@@ -127,8 +126,9 @@ jobs:
         run: |
           set -euo pipefail
           # Swap the image with az instead of a Spacelift public-worker terraform apply, which
-          # proved unreliable for this VMSS update (worker drops / no-log timeouts). setvar already
-          # kept the stack's TF var in sync, so a later stack apply refreshes to a no-op.
+          # proved unreliable for this VMSS update (worker drops / no-log timeouts). We deliberately
+          # do NOT setvar the stack's image var: on a failed test that would pin the pool to the bad
+          # version; leaving it means a later apply reverts the (test-only) pool to the default image.
           az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
             --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
           # Manual upgrade mode: apply the new model to instance 0 (sets latestModelApplied=true and
