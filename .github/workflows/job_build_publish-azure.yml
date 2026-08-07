@@ -103,11 +103,8 @@ jobs:
           echo "::add-mask::$token"
           echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
 
-      - name: Point the workerpool stack at the new image
+      - name: Keep the workerpool stack's image var in sync (no apply — az does the swap)
         run: spacectl stack environment setvar --id "$WORKERPOOL_STACK" TF_VAR_source_image_id "$NEW_IMAGE"
-
-      - name: Apply the workerpool stack (updates the VMSS model)
-        run: spacectl stack deploy --id "$WORKERPOOL_STACK" --auto-confirm
 
       - name: Resolve the pool's VMSS name and worker-pool id
         id: pool
@@ -139,16 +136,19 @@ jobs:
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
           echo "workers before reimage: [$ids]"
 
-      - name: Cycle the worker onto the new image (reimage the VMSS instance)
+      - name: Cycle the worker onto the new image (set image via az, then reimage)
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
         shell: bash
         run: |
           set -euo pipefail
-          # Manual upgrade mode: apply the latest model to the instance, then reimage so it
-          # re-provisions (re-runs cloud-init) on the new image and re-registers the worker.
-          az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
-          az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+          # Swap the image with az instead of a Spacelift public-worker terraform apply, which
+          # proved unreliable for this VMSS update (worker drops / no-log timeouts). setvar already
+          # kept the stack's TF var in sync, so a later stack apply refreshes to a no-op.
+          az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
+            --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
+          # Reimage instance 0 so it re-provisions (re-runs cloud-init) on the new image and re-registers.
+          az vmss reimage -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
 
       - name: Wait for the reimaged instance to be ready
         env:
