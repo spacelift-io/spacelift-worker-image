@@ -218,7 +218,7 @@ jobs:
       # ]
 
       - name: Write AWS AMI IDs to a markdown file
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require("fs");
@@ -265,7 +265,7 @@ jobs:
           name: manifest_aws_govcloud_arm64.json
 
       - name: Write GovCloud AWS AMI IDs to the markdown file
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require("fs");
@@ -329,7 +329,7 @@ jobs:
         # ]
 
       - name: Write Azure and GCP AMI IDs to the markdown file
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           AZURE_VERSION: ${{ needs.azure.outputs.azure_version }}
         with:
