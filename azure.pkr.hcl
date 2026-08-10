@@ -46,7 +46,7 @@ variable "gallery_resource_group" {
 }
 
 variable "gallery_name" {
-  type    = string
+  type = string
 }
 
 variable "gallery_image_name" {
@@ -89,6 +89,12 @@ variable "additional_tags" {
   default = {}
 }
 
+variable "exclude_from_latest" {
+  type        = bool
+  default     = false
+  description = "If true, the published gallery image version is excluded from 'latest' resolution (still deployable by explicit version). Used to hold a version back until it passes the on-pool test gate."
+}
+
 variable "packer_work_group" {
   type        = string
   default     = ""
@@ -106,11 +112,11 @@ source "azure-arm" "spacelift" {
   managed_image_resource_group_name = var.image_resource_group
 
   shared_image_gallery_destination {
-    subscription         = var.subscription_id
-    resource_group       = var.gallery_resource_group
-    gallery_name         = var.gallery_name
-    image_name           = var.gallery_image_name
-    image_version        = var.gallery_image_version
+    subscription   = var.subscription_id
+    resource_group = var.gallery_resource_group
+    gallery_name   = var.gallery_name
+    image_name     = var.gallery_image_name
+    image_version  = var.gallery_image_version
 
     dynamic target_region {
       for_each = var.gallery_replication_regions
@@ -121,6 +127,10 @@ source "azure-arm" "spacelift" {
     }
   }
 
+  # Hold the version back from `latest` until it passes the on-pool test gate.
+  # Top-level builder parameter (not inside shared_image_gallery_destination).
+  shared_gallery_image_version_exclude_from_latest = var.exclude_from_latest
+
   os_type = "Linux"
 
   image_publisher = var.source_image_publisher
@@ -129,7 +139,7 @@ source "azure-arm" "spacelift" {
 
   build_resource_group_name = var.packer_work_group
 
-  vm_size  = var.vm_size
+  vm_size = var.vm_size
 
   ssh_clear_authorized_keys = true
 
