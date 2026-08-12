@@ -1,11 +1,12 @@
 variable "image" {
   type        = string
   description = <<-EOT
-    Full self-link/path of the worker image under test. Override per run (the
-    workflow pins the just-built image). When null, defaults to the latest
-    non-deprecated image in the public 'spacelift-worker' family.
+    Full path of the worker image the pool boots, e.g.
+    projects/spacelift-workers/global/images/spacelift-worker-us-<suffix>.
+    Required — the rollout workflow pins the just-built image per run (and it is
+    persisted on the stack env). Intentionally no family "latest" default: that
+    lookup would 403 reading a still-private newest-in-family image during the gate.
   EOT
-  default     = null
 }
 
 variable "project" {

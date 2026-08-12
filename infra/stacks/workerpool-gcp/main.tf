@@ -4,24 +4,14 @@ resource "spacelift_worker_pool" "this" {
   space_id    = "root" # else the API defaults the pool to the "legacy" space, invisible to a root stack
 }
 
-# Default to the latest public worker image when the workflow has not pinned one.
-# The images are public (allAuthenticatedUsers imageUser), so the run's integration
-# SA can read the family. NOTE: cross-project read of spacelift-workers is assumed;
-# if the run SA lacks it, pin var.image instead.
-data "google_compute_image" "latest" {
-  family  = "spacelift-worker"
-  project = "spacelift-workers"
-}
-
 locals {
-  image    = coalesce(var.image, data.google_compute_image.latest.self_link)
   mig_name = "ami-res-gcp-workers"
 }
 
 module "gcp-worker" {
   source = "github.com/spacelift-io/terraform-google-spacelift-workerpool?ref=v2.0.0"
 
-  image                       = local.image
+  image                       = var.image
   network                     = "default"
   region                      = var.region
   zone                        = var.zone
@@ -38,6 +28,10 @@ module "gcp-worker" {
     export SPACELIFT_POOL_PRIVATE_KEY=${spacelift_worker_pool.this.private_key}
     export SPACELIFT_WORKER_COMMS_PROTOCOL="poll"
     export SPACELIFT_WORKER_COMMS_URL="https://app.spacelift.dev"
+    # Report the boot image as a worker metadata tag (gcp_image) so the rollout
+    # workflow can assert, via the Spacelift API alone, that the cycled worker
+    # actually booted from the image under test.
+    export SPACELIFT_METADATA_gcp_image="$(curl -sf -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/image || true)"
   EOT
 
   providers = {
