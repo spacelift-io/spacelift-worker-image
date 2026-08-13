@@ -68,73 +68,12 @@ jobs:
     secrets: inherit
 
   gcp:
-    name: Build GCP AMI using Packer
-    runs-on: ubuntu-latest
+    name: Build/test/publish GCP image
     permissions:
       id-token: write
       contents: read
-    env:
-      PKR_VAR_project_id: spacelift-workers
-      PKR_VAR_credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
-      PKR_VAR_image_base_name: spacelift-worker
-      PKR_VAR_image_family: spacelift-worker
-
-    steps:
-      - name: Check out the source code
-        uses: actions/checkout@main
-
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Authenticate with GCP
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
-
-      - name: Export suffix for GCP
-        run: |
-          echo "PKR_VAR_suffix=$(date +%s)-$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 8)" >> $GITHUB_ENV
-
-      - name: Setup packer
-        uses: hashicorp/setup-packer@main
-        with:
-          version: latest
-
-      - name: Initialize Packer
-        run: packer init gcp.pkr.hcl
-        env:
-          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
-
-      - name: GCP => Build the AMI using Packer for US
-        run: packer build gcp.pkr.hcl
-        env:
-          PKR_VAR_image_storage_location: us
-          PKR_VAR_zone: us-central1-a
-
-      - name: GCP => Build the AMI using Packer for EU
-        run: packer build gcp.pkr.hcl
-        env:
-          PKR_VAR_image_storage_location: eu
-          PKR_VAR_zone: europe-west1-d
-
-      - name: GCP => Build the AMI using Packer for Asia
-        run: packer build gcp.pkr.hcl
-        env:
-          PKR_VAR_image_storage_location: asia
-          PKR_VAR_zone: asia-northeast2-b
-
-      - name: GCP => Add IAM policy binding to the Compute Engine images
-        run: |
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-us-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-eu-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
-          gcloud compute images add-iam-policy-binding ${PKR_VAR_image_base_name}-asia-${PKR_VAR_suffix} --member='allAuthenticatedUsers' --role='roles/compute.imageUser'
-
-      - name: Upload manifest
-        uses: actions/upload-artifact@v7
-        with:
-          path: manifest_gcp.json
-          name: manifest_gcp.json
-          retention-days: 5
+    uses: ./.github/workflows/job_build_publish-gcp.yml
+    secrets: inherit
 
   gh-release:
     needs: [aws, aws-govcloud, azure, gcp]
