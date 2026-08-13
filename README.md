@@ -14,3 +14,8 @@ depending on the type of image you want to build:
 - [AWS](./aws/README.md)
 - [Azure](./azure/README.md)
 - [GCP](./gcp/README.md)
+
+## Building, testing and publishing
+
+For how images are built, validated on a real worker, and published per cloud, see
+[docs/build-test-publish.md](./docs/build-test-publish.md).
