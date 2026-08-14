@@ -110,8 +110,11 @@ Details live in `.github/workflows/job_build_publish-azure.yml`, `azure.pkr.hcl`
 
 ## GCP
 
-The published artifact is a set of three **Compute Engine images** (US, EU, Asia; amd64). What's
-specific to GCP:
+The published artifact is a set of three **Compute Engine images** (US, EU, Asia) per
+architecture (x86_64 and arm64 — six images total). arm64 images use their own name prefix
+(`spacelift-worker-arm64-…`) and image family (`spacelift-worker-arm64`): a GCP image family
+resolves to its newest image regardless of architecture, so mixing arches in one family would
+hand family-based consumers an image their machine type can't boot. What's specific to GCP:
 
 - **Public/private is an IAM binding.** Images are built project-private; publishing grants
   `allAuthenticatedUsers` the `roles/compute.imageUser` role on all three. During the test, the
@@ -119,6 +122,12 @@ specific to GCP:
 - **Only the US image is gated;** all three (identical content) publish together. The test points
   the pool at the new image and applies — the managed instance group (MIG) rolls a worker onto it,
   and that worker is confirmed to have booted from the exact image under test before the run.
+- **Both architectures are gated** on their own dedicated pool (x86_64 on an e2 MIG, arm64 on a
+  T2A MIG) — the two matrix legs share no Spacelift stack state. arm64 builds all run from
+  us-central1-a (the EU/Asia build zones offer no ARM machine types; the build zone only hosts the
+  temporary build VM — image storage locations are set independently), and a post-build check
+  asserts each arm64 image carries `architecture=ARM64` plus the `UEFI_COMPATIBLE`/`GVNIC`
+  guest-OS features before it may be tested or published.
 
-Details live in `.github/workflows/job_build_publish-gcp.yml`, `gcp.pkr.hcl`, and
-`infra/stacks/workerpool-gcp/`.
+Details live in `.github/workflows/job_build_publish-gcp.yml`, `gcp.pkr.hcl`,
+`infra/stacks/workerpool-gcp/`, and `infra/stacks/workerpool-gcp-arm64/`.

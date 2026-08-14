@@ -68,12 +68,27 @@ jobs:
     secrets: inherit
 
   gcp:
-    name: Build/test/publish GCP image
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            machine_type: n1-standard-2
+            source_image_family: ubuntu-2404-lts-amd64
+          - arch: arm64
+            # T2A (Ampere Altra): the only ARM series compatible with the default
+            # pd-standard build disk (C4A is Hyperdisk-only).
+            machine_type: t2a-standard-2
+            source_image_family: ubuntu-2404-lts-arm64
+    name: Build/test/publish GCP image (${{ matrix.arch }})
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/job_build_publish-gcp.yml
     secrets: inherit
+    with:
+      arch: ${{ matrix.arch }}
+      machine_type: ${{ matrix.machine_type }}
+      source_image_family: ${{ matrix.source_image_family }}
 
   gh-release:
     needs: [aws, aws-govcloud, azure, gcp]
@@ -198,10 +213,15 @@ jobs:
             ]
             fs.appendFileSync("./body.md", "\n\n" + header.join("\n") + "\n" + toPrint.join("\n"));
 
-      - name: Download Google Cloud manifest
+      - name: Download Google Cloud x64 manifest
         uses: actions/download-artifact@v8
         with:
-          name: manifest_gcp.json
+          name: manifest_gcp_x86_64.json
+
+      - name: Download Google Cloud arm64 manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: manifest_gcp_arm64.json
 
         # The GCP manifest file look like this:
         # "builds": [
@@ -233,22 +253,24 @@ jobs:
           script: |
             const fs = require("fs");
 
-            content = fs.readFileSync("./manifest_gcp.json", "utf8");
-            manifest = JSON.parse(content);
-
             const gcpLinesToPrint = [];
 
-            manifest["builds"].forEach((build) => {
-                    artifact = build["artifact_id"];
-                    if (artifact.indexOf("-us-") > 0) {
-                        gcpLinesToPrint.push(` - United States | \`${artifact}\``);
-                    }
-                    if (artifact.indexOf("-eu-") > 0) {
-                        gcpLinesToPrint.push(` - Europe | \`${artifact}\``);
-                    }
-                    if (artifact.indexOf("-asia-") > 0) {
-                        gcpLinesToPrint.push(` - Asia | \`${artifact}\``);
-                    }
+            [["x86_64", "./manifest_gcp_x86_64.json"], ["arm64", "./manifest_gcp_arm64.json"]].forEach(([arch, file]) => {
+                gcpLinesToPrint.push(`### ${arch}`, "");
+                const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+                manifest["builds"].forEach((build) => {
+                        const artifact = build["artifact_id"];
+                        if (artifact.indexOf("-us-") > 0) {
+                            gcpLinesToPrint.push(` - United States | \`${artifact}\``);
+                        }
+                        if (artifact.indexOf("-eu-") > 0) {
+                            gcpLinesToPrint.push(` - Europe | \`${artifact}\``);
+                        }
+                        if (artifact.indexOf("-asia-") > 0) {
+                            gcpLinesToPrint.push(` - Asia | \`${artifact}\``);
+                        }
+                });
+                gcpLinesToPrint.push("");
             });
 
             azureLines = [

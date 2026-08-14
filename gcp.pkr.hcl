@@ -37,6 +37,17 @@ variable "source_image_family" {
   default = "ubuntu-2404-lts-amd64"
 }
 
+variable "arch" {
+  type        = string
+  default     = "x86_64"
+  description = "Target image architecture. Must match source_image_family and machine_type; stamps the produced image's architecture field and names the manifest file."
+
+  validation {
+    condition     = contains(["x86_64", "arm64"], var.arch)
+    error_message = "arch must be x86_64 or arm64."
+  }
+}
+
 variable "suffix" {
   type    = string
   description = "A suffix to add to image names to ensure each version is unique. For example a timestamp or version number."
@@ -70,6 +81,10 @@ source "googlecompute" "spacelift" {
   image_name              = "${var.image_base_name}-${var.image_storage_location}-${var.suffix}"
   image_family            = var.image_family
   image_storage_locations = [var.image_storage_location]
+  # GCE inherits the architecture from the source disk when unset, but plugin 1.1.5
+  # once regressed that default (hashicorp/packer-plugin-googlecompute#232) and the
+  # plugin version floats (~> 1), so stamp it explicitly.
+  image_architecture = var.arch
 }
 
 build {
@@ -90,6 +105,6 @@ build {
   }
 
   post-processor "manifest" {
-    output = "manifest_gcp.json"
+    output = "manifest_gcp_${var.arch}.json"
   }
 }

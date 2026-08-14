@@ -9,3 +9,7 @@ crash.log
 
 # Ignore pkrvars files used for local testing
 *.pkrvars.hcl
+
+# Terraform working directories (infra/stacks are validated locally)
+.terraform/
+.terraform.lock.hcl
