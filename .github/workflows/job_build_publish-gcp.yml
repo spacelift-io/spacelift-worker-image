@@ -1,14 +1,33 @@
 on:
   workflow_call:
+    inputs:
+      arch:
+        description: "Image architecture (x86_64 or arm64)."
+        type: string
+        required: true
+      machine_type:
+        description: "Machine type for the Packer build VM. Must match the arch and exist in the build zones."
+        type: string
+        required: true
+      source_image_family:
+        description: "Public Ubuntu image family to build from (ubuntu-2404-lts-amd64 or ubuntu-2404-lts-arm64)."
+        type: string
+        required: true
 
 name: Build, test and publish GCP image
 
 env:
   GCP_PROJECT: spacelift-workers
-  IMAGE_BASE_NAME: spacelift-worker
+  # arm64 images get their own name prefix AND image family: a GCP image family
+  # resolves to its newest image regardless of architecture, so mixing arches in
+  # one family would hand x86 family-consumers an unbootable ARM image.
+  IMAGE_BASE_NAME: ${{ inputs.arch == 'arm64' && 'spacelift-worker-arm64' || 'spacelift-worker' }}
+  MANIFEST: manifest_gcp_${{ inputs.arch }}.json
   SPACELIFT_API_KEY_ENDPOINT: https://spacelift-ci-gh.app.spacelift.dev
-  WORKERPOOL_STACK: ami-build-resilience-workerpool-gcp
-  TEST_STACK: ami-resilience-testing-gcp
+  # Each arch has its own test pool + test stack, so the two matrix legs never
+  # touch each other's Spacelift stack state or cycle each other's MIG.
+  WORKERPOOL_STACK: ${{ inputs.arch == 'arm64' && 'ami-build-resilience-workerpool-gcp-arm64' || 'ami-build-resilience-workerpool-gcp' }}
+  TEST_STACK: ${{ inputs.arch == 'arm64' && 'ami-resilience-testing-gcp-arm64' || 'ami-resilience-testing-gcp' }}
   RUN_SA: sl-workerpool-gcp@spacelift-development.iam.gserviceaccount.com
   WORKER_SA: spacelift-test-worker@spacelift-development.iam.gserviceaccount.com
   # Google APIs service agent for spacelift-development (project 316393406309)
@@ -16,15 +35,18 @@ env:
 
 jobs:
   build:
-    name: Build private images (us/eu/asia)
+    name: Build private images (us/eu/asia, ${{ inputs.arch }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       PKR_VAR_project_id: spacelift-workers
       PKR_VAR_credentials_json: ${{ secrets.GCP_CREDENTIALS_JSON }}
-      PKR_VAR_image_base_name: spacelift-worker
-      PKR_VAR_image_family: spacelift-worker
+      PKR_VAR_image_base_name: ${{ inputs.arch == 'arm64' && 'spacelift-worker-arm64' || 'spacelift-worker' }}
+      PKR_VAR_image_family: ${{ inputs.arch == 'arm64' && 'spacelift-worker-arm64' || 'spacelift-worker' }}
+      PKR_VAR_arch: ${{ inputs.arch }}
+      PKR_VAR_machine_type: ${{ inputs.machine_type }}
+      PKR_VAR_source_image_family: ${{ inputs.source_image_family }}
     outputs:
       image_us: ${{ steps.capture.outputs.image_us }}
     steps:
@@ -54,6 +76,10 @@ jobs:
 
       # Build PRIVATE: packer adds no sharing, and we deliberately skip the
       # allAuthenticatedUsers binding here — the publish job adds it only after the test passes.
+      # ARM machine types (T2A) exist in none of the EU/Asia build zones, so the arm64
+      # leg runs all three builds from us-central1-a — the build zone only hosts the
+      # temporary build VM, while image_storage_locations still places the image's
+      # storage in us/eu/asia. The images are global either way.
       - name: GCP => Build the image for US
         run: packer build gcp.pkr.hcl
         env:
@@ -64,31 +90,58 @@ jobs:
         run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: eu
-          PKR_VAR_zone: europe-west1-d
+          PKR_VAR_zone: ${{ inputs.arch == 'arm64' && 'us-central1-a' || 'europe-west1-d' }}
 
       - name: GCP => Build the image for Asia
         run: packer build gcp.pkr.hcl
         env:
           PKR_VAR_image_storage_location: asia
-          PKR_VAR_zone: asia-northeast2-b
+          PKR_VAR_zone: ${{ inputs.arch == 'arm64' && 'us-central1-a' || 'asia-northeast2-b' }}
 
+      # ARM instances are UEFI-only with gVNIC networking: an arm64 image that lost the
+      # UEFI_COMPATIBLE/GVNIC guest-OS features (inherited from the source disk, but never
+      # sent by packer itself) would be unbootable everywhere. Fail here, before any
+      # test/publish, rather than shipping it.
+      - name: Verify image architecture and boot features
+        env:
+          ARCH: ${{ inputs.arch }}
+        run: |
+          set -euo pipefail
+          expected=$([ "$ARCH" = "arm64" ] && echo ARM64 || echo X86_64)
+          for name in $(jq -r '.builds[].artifact_id' "$MANIFEST"); do
+            gcloud compute images describe "$name" --project="$GCP_PROJECT" --format=json > image.json
+            actual=$(jq -r '.architecture' image.json)
+            [ "$actual" = "$expected" ] || { echo "$name: architecture=$actual, expected $expected" >&2; exit 1; }
+            if [ "$ARCH" = "arm64" ]; then
+              jq -e '[.guestOsFeatures[]?.type] | (contains(["UEFI_COMPATIBLE"]) and contains(["GVNIC"]))' image.json > /dev/null \
+                || { echo "$name is missing UEFI_COMPATIBLE/GVNIC guest OS features — unbootable on ARM" >&2; exit 1; }
+            fi
+            echo "$name: architecture=$actual OK"
+          done
+
+      # Derive the us image name from the manifest (single source of truth) instead of
+      # reconstructing it from env — a reconstruction mismatch could share/test the wrong image.
       - name: Capture the us image path
         id: capture
         run: |
           set -euo pipefail
-          echo "image_us=projects/${GCP_PROJECT}/global/images/${IMAGE_BASE_NAME}-us-${PKR_VAR_suffix}" >> "$GITHUB_OUTPUT"
-          echo "us image: ${IMAGE_BASE_NAME}-us-${PKR_VAR_suffix}"
+          us_image=$(jq -r '[.builds[].artifact_id | select(contains("-us-"))] | first // empty' "$MANIFEST")
+          [ -n "$us_image" ] || { echo "us image not found in $MANIFEST" >&2; exit 1; }
+          echo "image_us_name=$us_image" >> "$GITHUB_OUTPUT"
+          echo "image_us=projects/${GCP_PROJECT}/global/images/${us_image}" >> "$GITHUB_OUTPUT"
+          echo "us image: $us_image"
 
       # Grant the identities that read the still-private us image during the cycle:
       #  - RUN_SA          creates the instance template (needs compute.images.useReadOnly)
       #  - CLOUDSERVICES_SA is the GCE service agent that creates the MIG instances
       #  - WORKER_SA        runtime identity of the VMs
       - name: Share the private us image with the test identities
+        env:
+          US_IMAGE: ${{ steps.capture.outputs.image_us_name }}
         run: |
           set -euo pipefail
-          us_image="${IMAGE_BASE_NAME}-us-${PKR_VAR_suffix}"
           for sa in "$RUN_SA" "$CLOUDSERVICES_SA" "$WORKER_SA"; do
-            gcloud compute images add-iam-policy-binding "$us_image" \
+            gcloud compute images add-iam-policy-binding "$US_IMAGE" \
               --project="$GCP_PROJECT" \
               --member="serviceAccount:${sa}" \
               --role="roles/compute.imageUser"
@@ -97,12 +150,12 @@ jobs:
       - name: Upload manifest
         uses: actions/upload-artifact@v7
         with:
-          path: manifest_gcp.json
-          name: manifest_gcp.json
+          path: manifest_gcp_${{ inputs.arch }}.json
+          name: manifest_gcp_${{ inputs.arch }}.json
           retention-days: 5
 
   test:
-    name: Cycle the pool onto the new image and run the test stack
+    name: Cycle the ${{ inputs.arch }} pool onto the new image and run the test stack
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -205,7 +258,7 @@ jobs:
         run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
 
   publish:
-    name: Publish (make all images public)
+    name: Publish (make all ${{ inputs.arch }} images public)
     needs: [build, test]
     if: ${{ always() && needs.build.result == 'success' && needs.test.result == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
@@ -223,12 +276,12 @@ jobs:
       - name: Download manifest
         uses: actions/download-artifact@v8
         with:
-          name: manifest_gcp.json
+          name: manifest_gcp_${{ inputs.arch }}.json
 
       - name: Make each image public
         run: |
           set -euo pipefail
-          for name in $(jq -r '.builds[].artifact_id' manifest_gcp.json); do
+          for name in $(jq -r '.builds[].artifact_id' "$MANIFEST"); do
             echo "Publishing $name"
             gcloud compute images add-iam-policy-binding "$name" \
               --project="$GCP_PROJECT" \

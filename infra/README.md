@@ -13,7 +13,8 @@ stacks/
   workerpool-aws/      EC2 test worker pool (ami-build-resilience-workerpool)
   workerpool-aws-gov/  GovCloud test worker pool
   workerpool-azure/    Azure VMSS test worker pool
-  workerpool-gcp/      GCP MIG test worker pool
+  workerpool-gcp/      GCP MIG test worker pool (x86_64)
+  workerpool-gcp-arm64/ GCP MIG test worker pool (arm64, T2A)
 modules/
   github-deployment-role/  GitHub-OIDC IAM role used by CI to cycle a pool
 ```
