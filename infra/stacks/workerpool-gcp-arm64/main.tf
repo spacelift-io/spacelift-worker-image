@@ -4,6 +4,13 @@ resource "spacelift_worker_pool" "this" {
   space_id    = "root" # else the API defaults the pool to the "legacy" space, invisible to a root stack
 }
 
+# Egress: the workers get no external IP, so they need Cloud NAT to reach Spacelift
+# and downloads.spacelift.dev. This stack deliberately does NOT create its own router/NAT:
+# GCP allows only one NAT with ALL_SUBNETWORKS_ALL_IP_RANGES per network+region, and the
+# x86_64 pool (workerpool-gcp) already owns `ami-res-gcp-nat` on default/us-central1, which
+# covers these workers too. A second one is rejected with
+#   "Can not create new Nats since a Nat with option ALL_SUBNETWORKS_ALL_IP_RANGES exists".
+# Moving this pool to another region would let it own its own NAT again.
 locals {
   mig_name = "ami-res-gcp-arm64-workers"
 }
@@ -43,7 +50,4 @@ module "gcp-worker" {
   providers = {
     google = google
   }
-
-  # Workers have no external IP; they need NAT egress before they can register.
-  depends_on = [google_compute_router_nat.this]
 }
