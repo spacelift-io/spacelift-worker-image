@@ -89,7 +89,10 @@ jobs:
           PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Build the Azure image (PRIVATE — excluded from latest)
-        run: packer build azure.pkr.hcl
+        # -force overwrites a pre-existing 0.0.<run> gallery version (run_number can repeat across
+        # re-runs; run_id is too large for a gallery version segment). Debug-only; prod builds
+        # monotonic 3.0.<run> versions and never needs this.
+        run: packer build -force azure.pkr.hcl
 
       - name: Export Azure version number
         id: export_azure_version
