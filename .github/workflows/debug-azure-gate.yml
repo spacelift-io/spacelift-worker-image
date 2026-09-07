@@ -217,7 +217,7 @@ jobs:
       # tracking is gone. Wait only for the one replacement worker to register (async), then
       # ASSERT: the pool has exactly one worker, and it self-reports the image version under
       # test via the `image_version` metadata tag (set in the pool stack config from IMDS
-      # exactVersion, mirroring GCP's gcp_image). Requires the pool stack applied with that tag.
+      # exactVersion, mirroring GCP's gcp_image).
       - name: Assert exactly one worker, on the image under test
         env:
           EXPECTED_VERSION: ${{ steps.img.outputs.version }}
