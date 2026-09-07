@@ -14,9 +14,10 @@ name: DEBUG — Azure gate reimage-churn investigation (no publish)
 # the AWS ASG scale-down/up) yields a single clean worker — matching AWS/GCP. So the gate no
 # longer needs settle/churn tracking.
 #
-# This workflow:
-#   1. sets the VMSS model to the target image (default 3.0.122, NO rebuild), then
-#      SCALES 0 -> 1 so a genuinely NEW instance boots from the new model (not reimage);
+# This workflow (full build->deploy->test by default):
+#   0. BUILDS a fresh 0.0.<run> image (skipped only if a workflow_dispatch pins an existing version);
+#   1. sets the VMSS model to that image, then SCALES 0 -> 1 so a genuinely NEW instance boots
+#      from the new model (not reimage);
 #   2. waits for the single replacement worker, then ASSERTS the pool has exactly one worker
 #      and it self-reports the image version under test (image_version metadata tag, set in the
 #      pool stack config from IMDS exactVersion — like GCP's gcp_image);
@@ -33,9 +34,9 @@ on:
   workflow_dispatch:
     inputs:
       image_version:
-        description: "Community-gallery image version to cycle onto (default 3.0.122, no rebuild). Leave blank to build a fresh 0.0.<run>."
+        description: "Leave blank (default) to BUILD a fresh 0.0.<run> image, then deploy+test it. Set an existing version (e.g. 3.0.122) to skip the build and cycle onto it."
         required: false
-        default: "3.0.122"
+        default: ""
 
 permissions:
   id-token: write
@@ -51,10 +52,10 @@ env:
 
 jobs:
   build:
-    name: Build a fresh test image (dispatch-only, when no version pinned)
-    # Never on PRs (would add a ~26min build to every push); only an explicit
-    # workflow_dispatch with a blank image_version builds fresh.
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.image_version == '' }}
+    name: Build a fresh test image (0.0.<run>)
+    # Builds whenever no explicit image_version is pinned — i.e. on every PR and on a
+    # workflow_dispatch with a blank input. Pinning a version (dispatch) skips the build.
+    if: ${{ inputs.image_version == '' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -112,9 +113,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version='${{ inputs.image_version }}'
-          [ -n "$version" ] || version='${{ needs.build.outputs.azure_version }}'
-          [ -n "$version" ] || version='3.0.122'   # PR / no-input default: reproduce the failing image, no rebuild
+          version='${{ inputs.image_version }}'                          # set = reuse an existing version (skip build)
+          [ -n "$version" ] || version='${{ needs.build.outputs.azure_version }}'  # else the freshly-built 0.0.<run>
+          [ -n "$version" ] || { echo "no image version: build was skipped and no image_version input given" >&2; exit 1; }
           new_image="/communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/$version"
           echo "version=$version"     >> "$GITHUB_OUTPUT"
           echo "new_image=$new_image" >> "$GITHUB_OUTPUT"
