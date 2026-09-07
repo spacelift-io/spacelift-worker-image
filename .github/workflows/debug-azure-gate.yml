@@ -205,23 +205,13 @@ jobs:
           echo "instance did not reach succeeded / latest-model in time" >&2
           exit 1
 
-      - name: Assert the VMSS is on the requested image version
-        env:
-          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
-          NEW_IMAGE: ${{ steps.img.outputs.new_image }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          got=$(az vmss show -g "$TEST_RG" -n "$VMSS_NAME" \
-            --query "virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId" -o tsv)
-          echo "VMSS image: $got"
-          [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the requested image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
-
       # Replace-instance (scale 0->1) yields a SINGLE clean worker, so the old settle/churn
       # tracking is gone. Wait only for the one replacement worker to register (async), then
       # ASSERT: the pool has exactly one worker, and it self-reports the image version under
       # test via the `image_version` metadata tag (set in the pool stack config from IMDS
-      # exactVersion, mirroring GCP's gcp_image).
+      # exactVersion, mirroring GCP's gcp_image). This worker-level check is end-to-end and
+      # subsumes a VMSS-model image check (a worker can't report the right version unless the
+      # model was right), so there is no separate "assert VMSS model image" step.
       - name: Assert exactly one worker, on the image under test
         env:
           EXPECTED_VERSION: ${{ steps.img.outputs.version }}

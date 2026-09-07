@@ -169,17 +169,9 @@ jobs:
           echo "instance did not reach succeeded / latest-model in time" >&2
           exit 1
 
-      - name: Assert the VMSS is on the new image version (fail the gate if not)
-        env:
-          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          got=$(az vmss show -g "$TEST_RG" -n "$VMSS_NAME" \
-            --query "virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId" -o tsv)
-          echo "VMSS image: $got"
-          [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the new image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
-
+      # No separate "assert VMSS model is on the new image" step: the worker-level image_version
+      # assertion below is end-to-end (a worker can't self-report the built version unless the
+      # model, the instance, and the boot were all correct), so it subsumes a model check.
       - name: Assert exactly one worker, on the image under test
         env:
           EXPECTED_VERSION: ${{ needs.build.outputs.azure_version }}
