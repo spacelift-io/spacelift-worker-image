@@ -1,0 +1,267 @@
+name: DEBUG — Azure worker-image gate (no publish)
+
+# Manual investigation harness for the Azure build->test->publish gate.
+#
+# It reproduces the *production* test path (job_build_publish-azure.yml `test` job):
+# cycle the Azure test pool onto a given community-gallery image version, wait for
+# the reimaged worker to register, then run the test stack. On a test failure it
+# captures worker-side diagnostics (launcher journal, dmesg, docker/gvisor state,
+# serial/boot log) BEFORE anything is torn down.
+#
+# It NEVER publishes/promotes, and it is NOT the "Scheduled publish" pipeline, so it
+# does not trip the Datadog CI monitor (ci.pipeline.name:"Scheduled publish"
+# ci.status:error) or page incident.io / #development.
+#
+# Default reproduces the exact image that failed run 34066056154 (3.0.122) with NO
+# rebuild (~5 min). Pass an empty image_version to build a fresh, safe 0.0.<run>
+# version instead (excluded from latest AND below the real 3.0.x line).
+#
+# Temporary debug tooling — delete before merging to main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: "Community-gallery image version to test (e.g. 3.0.122). Leave blank to build a fresh 0.0.<run> version."
+        required: false
+        default: "3.0.122"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  SPACELIFT_API_KEY_ENDPOINT: https://spacelift-ci-gh.app.spacelift.dev
+  WORKERPOOL_STACK: ami-build-resilience-workerpool-azure
+  TEST_STACK: ami-resilience-testing-azure
+  AZURE_CLIENT_ID: "976e4a6e-c619-417e-9add-50e2d674e2db"
+  TEST_SUBSCRIPTION_ID: "00eb57d2-b059-4e1f-ac2d-c10400a2cf24"
+  TEST_RG: rg-ami-resilience-azure
+
+jobs:
+  build:
+    name: Build a fresh test image (only when no version is pinned)
+    if: ${{ inputs.image_version == '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PKR_VAR_client_id: "976e4a6e-c619-417e-9add-50e2d674e2db"
+      PKR_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      PKR_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      PKR_VAR_image_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_packer_work_group: rg-worker_images_packer-public-westeurope
+      PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
+      PKR_VAR_gallery_name: spacelift_worker_images_public
+      PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
+      # westeurope only — the test pool lives there; no need to replicate to 20 regions for a debug build.
+      PKR_VAR_gallery_replication_regions: '["westeurope"]'
+      # 0.0.<run>: safe debug version — excluded from latest AND below the real 3.0.x line.
+      PKR_VAR_gallery_image_version: 0.0.${{ github.run_number }}
+      PKR_VAR_exclude_from_latest: true
+    outputs:
+      azure_version: ${{ steps.export_azure_version.outputs.azure_version }}
+    steps:
+      - name: Check out the source code
+        uses: actions/checkout@main
+
+      - name: Setup packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init azure.pkr.hcl
+        env:
+          PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
+
+      - name: Build the Azure image (PRIVATE — excluded from latest)
+        run: packer build azure.pkr.hcl
+
+      - name: Export Azure version number
+        id: export_azure_version
+        run: echo "azure_version=$PKR_VAR_gallery_image_version" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Cycle the pool onto the image and run the test stack (with diagnostics)
+    needs: build
+    # Run even when `build` was skipped (a version was pinned).
+    if: ${{ always() && (inputs.image_version != '' || needs.build.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
+    steps:
+      - name: Resolve the image version + community-gallery id
+        id: img
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ inputs.image_version }}'
+          [ -n "$version" ] || version='${{ needs.build.outputs.azure_version }}'
+          [ -n "$version" ] || { echo "no image version resolved" >&2; exit 1; }
+          new_image="/communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/$version"
+          echo "version=$version"        >> "$GITHUB_OUTPUT"
+          echo "new_image=$new_image"    >> "$GITHUB_OUTPUT"
+          echo "Testing image version $version"
+
+      - name: Setup spacectl
+        uses: spacelift-io/setup-spacectl@main
+
+      - name: Authenticate to Spacelift via OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Declare/assign separately so `set -e` catches a failed token fetch (SC2155).
+          SPACELIFT_API_KEY_SECRET=$(curl -sf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
+          export SPACELIFT_API_KEY_SECRET
+          token=$(spacectl profile export-token)
+          echo "::add-mask::$token"
+          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Resolve the pool's VMSS name and worker-pool id
+        id: pool
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `.value` is double-encoded (a JSON string containing quotes), so fromjson decodes it.
+          out=$(spacectl stack outputs --id "$WORKERPOOL_STACK" --output json)
+          vmss=$(echo "$out" | jq -r '.[] | select(.id=="vmss_name")      | .value | fromjson')
+          pid=$(echo "$out"  | jq -r '.[] | select(.id=="worker_pool_id") | .value | fromjson')
+          [ -n "$vmss" ] && [ -n "$pid" ] || { echo "vmss_name/worker_pool_id output not found" >&2; exit 1; }
+          echo "vmss_name=$vmss" >> "$GITHUB_OUTPUT"
+          echo "pool_id=$pid"    >> "$GITHUB_OUTPUT"
+          echo "VMSS: $vmss  pool: $pid"
+
+      - name: Log in to Azure (Test subscription) via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.TEST_SUBSCRIPTION_ID }}
+
+      - name: Snapshot the pool's worker IDs before reimage
+        id: before
+        shell: bash
+        run: |
+          set -euo pipefail
+          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[ (. // []) | .[].id ] | join(",")')
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+          echo "workers before reimage: [$ids]"
+
+      - name: Cycle the worker onto the image (set image via az, then reimage)
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+          NEW_IMAGE: ${{ steps.img.outputs.new_image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # az-only swap (mirrors the production gate): we do NOT setvar the stack's
+          # TF_VAR_source_image_id, so a failed test never pins the pool to a bad version.
+          az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
+            --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
+
+          az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+          az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+
+      - name: Wait for the reimaged instance to be ready
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
+              --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
+
+            latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
+              --query "[?instanceId=='0'].latestModelApplied | [0]" -o tsv || true)
+
+            echo "instance provisioning=$prov latestModelApplied=$latest"
+            [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
+
+            sleep 10
+          done
+          echo "instance did not reach succeeded / latest-model in time" >&2
+          exit 1
+
+      - name: Assert the VMSS is on the requested image version (fail if not)
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+          NEW_IMAGE: ${{ steps.img.outputs.new_image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          got=$(az vmss show -g "$TEST_RG" -n "$VMSS_NAME" \
+            --query "virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId" -o tsv)
+          echo "VMSS image: $got"
+          [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the requested image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
+
+      - name: Wait for the reimaged worker (new, idle) and the old one gone
+        env:
+          BEFORE: ${{ steps.before.outputs.ids }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pool_id='${{ steps.pool.outputs.pool_id }}'
+          for _ in $(seq 1 60); do
+            json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
+
+            new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
+              ($before | split(",")) as $old
+              | [ (. // []) | .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
+              | .[0] // empty')
+
+            old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
+              ($before | split(",")) as $old
+              | [ (. // []) | .[] | select(.id as $i | $old | index($i)) ] | length')
+            echo "new_idle=[$new_idle] old_still_present=$old_left"
+
+            if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
+              echo "reimaged worker $new_idle is idle and pre-reimage workers are gone"
+              exit 0
+            fi
+
+            sleep 10
+          done
+          echo "timed out waiting for the reimaged worker to register cleanly" >&2
+          exit 1
+
+      - name: Run the test stack (guaranteed on the new-image worker)
+        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
+
+      # --- Diagnostics: only when something above failed. The instance is NOT torn
+      # down or reimaged back, so this captures the state the failing run left behind.
+      - name: Capture worker-side diagnostics
+        if: ${{ failure() }}
+        env:
+          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+        shell: bash
+        run: |
+          set -uo pipefail  # keep going even if individual probes fail
+          echo "===== VMSS instance view ====="
+          az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 -o json || true
+
+          echo "===== in-guest probes (run-command) ====="
+          az vmss run-command invoke -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
+            --command-id RunShellScript \
+            --scripts '
+              echo "### spacelift-launcher unit status"; systemctl status spacelift-launcher --no-pager || true
+              echo "### spacelift-launcher journal (last 500)"; journalctl -u spacelift-launcher --no-pager -n 500 || true
+              echo "### docker status"; systemctl status docker --no-pager || true; docker ps -a 2>&1 || true; docker info 2>&1 || true
+              echo "### gvisor/runsc"; which runsc || true; runsc --version 2>&1 || true; cat /etc/docker/daemon.json 2>&1 || true
+              echo "### dmesg tail (OOM/panic?)"; dmesg 2>&1 | tail -300 || true
+              echo "### memory"; free -m || true
+              echo "### cloud-init"; cloud-init status --long 2>&1 || true; tail -200 /var/log/cloud-init-output.log 2>&1 || true
+            ' -o json || true
+
+          echo "===== serial / boot log ====="
+          az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
+            --query "bootDiagnostics" -o json || true
+          az serial-console connect -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 2>&1 | head -200 || true
