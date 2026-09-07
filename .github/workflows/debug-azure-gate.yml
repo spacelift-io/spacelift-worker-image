@@ -1,28 +1,42 @@
-name: DEBUG — Azure worker-image gate (no publish)
+name: DEBUG — Azure gate reimage-churn investigation (no publish)
 
-# Manual investigation harness for the Azure build->test->publish gate.
+# Investigation harness for the Azure build->test->publish gate false-negative
+# (scheduled run 34066056154: test stack FAILED "worker stopped reporting its status").
 #
-# It reproduces the *production* test path (job_build_publish-azure.yml `test` job):
-# cycle the Azure test pool onto a given community-gallery image version, wait for
-# the reimaged worker to register, then run the test stack. On a test failure it
-# captures worker-side diagnostics (launcher journal, dmesg, docker/gvisor state,
-# serial/boot log) BEFORE anything is torn down.
+# Root cause established from the failed job log: after `az vmss reimage`, the pool
+# registers a TRANSIENT worker generation that the gate's "wait for reimaged worker"
+# accepted with NO stability check, ran the test on it, then that worker was replaced
+# ~68s later by the durable one — so the run bound to a worker that vanished.
+#   BEFORE=[01M1WJJ2...]  gate matched 01M1XB7T... (07:19:54, ~1s)  durable=01M1XBVQ... (07:21:02)
 #
-# It NEVER publishes/promotes, and it is NOT the "Scheduled publish" pipeline, so it
-# does not trip the Datadog CI monitor (ci.pipeline.name:"Scheduled publish"
-# ci.status:error) or page incident.io / #development.
+# Confirmed via metadata logging: the reimage-in-place produces TWO worker sessions on the
+# SAME VMSS instance (same instance_id / vm_resource_id) — a launcher double-registration.
 #
-# Default reproduces the exact image that failed run 34066056154 (3.0.122) with NO
-# rebuild (~5 min). Pass an empty image_version to build a fresh, safe 0.0.<run>
-# version instead (excluded from latest AND below the real 3.0.x line).
+# HYPOTHESIS UNDER TEST HERE: replacing the instance (Azure analogue of the AWS ASG
+# scale-down/up) instead of reimaging-in-place yields a single, clean worker registration —
+# matching AWS (ASG refresh) and GCP (MIG REPLACE), which don't exhibit the churn.
+#
+# This workflow:
+#   1. sets the VMSS model to the target image (default 3.0.122, NO rebuild), then
+#      SCALES 0 -> 1 so a genuinely NEW instance boots from the new model (not reimage);
+#   2. OBSERVES worker registrations — polls the pool every 10s and logs every worker
+#      id + busy + metadata, so we can see whether the double-registration is GONE;
+#   3. keeps the SETTLE window (same new idle worker for SETTLE_POLLS polls) as a guard;
+#   4. runs the test stack with a TARGETED retry (once, only on
+#      "worker stopped reporting its status"); a genuine image regression fails both.
+#
+# It NEVER publishes/promotes and is NOT the "Scheduled publish" pipeline, so it does
+# not trip the Datadog CI monitor or page incident.io / #development.
 #
 # Temporary debug tooling — delete before merging to main.
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       image_version:
-        description: "Community-gallery image version to test (e.g. 3.0.122). Leave blank to build a fresh 0.0.<run> version."
+        description: "Community-gallery image version to cycle onto (default 3.0.122, no rebuild). Leave blank to build a fresh 0.0.<run>."
         required: false
         default: "3.0.122"
 
@@ -37,11 +51,17 @@ env:
   AZURE_CLIENT_ID: "976e4a6e-c619-417e-9add-50e2d674e2db"
   TEST_SUBSCRIPTION_ID: "00eb57d2-b059-4e1f-ac2d-c10400a2cf24"
   TEST_RG: rg-ami-resilience-azure
+  # How long a new idle worker must stay the SAME id before we accept it (settle window).
+  # 9 polls x 10s = 90s, chosen to exceed the ~68s transient-churn gap observed in the failure.
+  SETTLE_POLLS: "9"
+  POLL_INTERVAL: "10"
 
 jobs:
   build:
-    name: Build a fresh test image (only when no version is pinned)
-    if: ${{ inputs.image_version == '' }}
+    name: Build a fresh test image (dispatch-only, when no version pinned)
+    # Never on PRs (would add a ~26min build to every push); only an explicit
+    # workflow_dispatch with a blank image_version builds fresh.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.image_version == '' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -55,9 +75,7 @@ jobs:
       PKR_VAR_gallery_resource_group: rg-worker_images-public-westeurope
       PKR_VAR_gallery_name: spacelift_worker_images_public
       PKR_VAR_gallery_image_name: spacelift_worker_image_ubu_lts
-      # westeurope only — the test pool lives there; no need to replicate to 20 regions for a debug build.
       PKR_VAR_gallery_replication_regions: '["westeurope"]'
-      # 0.0.<run>: safe debug version — excluded from latest AND below the real 3.0.x line.
       PKR_VAR_gallery_image_version: 0.0.${{ github.run_number }}
       PKR_VAR_exclude_from_latest: true
     outputs:
@@ -84,10 +102,10 @@ jobs:
         run: echo "azure_version=$PKR_VAR_gallery_image_version" >> "$GITHUB_OUTPUT"
 
   test:
-    name: Cycle the pool onto the image and run the test stack (with diagnostics)
+    name: Cycle + observe worker churn + settle + run test stack
     needs: build
-    # Run even when `build` was skipped (a version was pinned).
-    if: ${{ always() && (inputs.image_version != '' || needs.build.result == 'success') }}
+    # Runs when build succeeded OR was skipped (pinned/default version). Only skips if build failed.
+    if: ${{ always() && needs.build.result != 'failure' && needs.build.result != 'cancelled' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -103,11 +121,11 @@ jobs:
           set -euo pipefail
           version='${{ inputs.image_version }}'
           [ -n "$version" ] || version='${{ needs.build.outputs.azure_version }}'
-          [ -n "$version" ] || { echo "no image version resolved" >&2; exit 1; }
+          [ -n "$version" ] || version='3.0.122'   # PR / no-input default: reproduce the failing image, no rebuild
           new_image="/communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/$version"
-          echo "version=$version"        >> "$GITHUB_OUTPUT"
-          echo "new_image=$new_image"    >> "$GITHUB_OUTPUT"
-          echo "Testing image version $version"
+          echo "version=$version"     >> "$GITHUB_OUTPUT"
+          echo "new_image=$new_image" >> "$GITHUB_OUTPUT"
+          echo "Cycling pool onto image version $version"
 
       - name: Setup spacectl
         uses: spacelift-io/setup-spacectl@main
@@ -155,43 +173,51 @@ jobs:
           echo "ids=$ids" >> "$GITHUB_OUTPUT"
           echo "workers before reimage: [$ids]"
 
-      - name: Cycle the worker onto the image (set image via az, then reimage)
+      - name: Cycle the worker onto the image (set image via az, then scale 0->1)
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
           NEW_IMAGE: ${{ steps.img.outputs.new_image }}
         shell: bash
         run: |
           set -euo pipefail
-          # az-only swap (mirrors the production gate): we do NOT setvar the stack's
-          # TF_VAR_source_image_id, so a failed test never pins the pool to a bad version.
+          # Set the VMSS MODEL to the new image; a newly-created instance boots from the model.
           az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
             --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
 
-          az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
-          az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
+          # Azure analogue of the AWS ASG scale-down/up (min_healthy_percentage=0): destroy the
+          # instance and boot a GENUINELY NEW one from the new model — a fresh single cloud-init,
+          # unlike reimage-in-place (which registered TWO worker sessions on the same instance).
+          az vmss scale -g "$TEST_RG" -n "$VMSS_NAME" --new-capacity 0
+          until [ "$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query 'length(@)' -o tsv)" = "0" ]; do
+            echo "waiting for scale-in to 0 instances..."; sleep 5
+          done
+          az vmss scale -g "$TEST_RG" -n "$VMSS_NAME" --new-capacity 1
 
-      - name: Wait for the reimaged instance to be ready
+      - name: Wait for the new instance to be ready
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
         shell: bash
         run: |
           set -euo pipefail
+          # The scaled-up instance normally reuses id 0, but don't assume — resolve it.
           for _ in $(seq 1 30); do
-            prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
-              --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
-
-            latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
-              --query "[?instanceId=='0'].latestModelApplied | [0]" -o tsv || true)
-
-            echo "instance provisioning=$prov latestModelApplied=$latest"
-            [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
-
+            iid=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query "[0].instanceId" -o tsv || true)
+            if [ -n "$iid" ]; then
+              prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id "$iid" \
+                --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
+              latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
+                --query "[?instanceId=='$iid'].latestModelApplied | [0]" -o tsv || true)
+              echo "instance $iid provisioning=$prov latestModelApplied=$latest"
+              [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
+            else
+              echo "no instance yet (scale-up in progress)"
+            fi
             sleep 10
           done
           echo "instance did not reach succeeded / latest-model in time" >&2
           exit 1
 
-      - name: Assert the VMSS is on the requested image version (fail if not)
+      - name: Assert the VMSS is on the requested image version
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
           NEW_IMAGE: ${{ steps.img.outputs.new_image }}
@@ -203,65 +229,80 @@ jobs:
           echo "VMSS image: $got"
           [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the requested image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
 
-      - name: Wait for the reimaged worker (new, idle) and the old one gone
+      # OBSERVE the churn + apply the SETTLE window fix in one step.
+      # Logs the FULL worker list each poll (transient->durable churn is visible), and
+      # accepts a new, idle worker only after it stays the same id for SETTLE_POLLS
+      # consecutive polls — so a transient generation (e.g. 01M1XB7T that vanishes ~68s
+      # later) never satisfies the window and is skipped.
+      - name: Wait for a STABLE reimaged worker (observe churn + settle)
         env:
           BEFORE: ${{ steps.before.outputs.ids }}
         shell: bash
         run: |
           set -euo pipefail
           pool_id='${{ steps.pool.outputs.pool_id }}'
-          for _ in $(seq 1 60); do
+          candidate=""; stable=0
+          for i in $(seq 1 60); do
             json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
+            # One-time full-object dump so we see the exact field names (metadata shape).
+            [ "$i" = "1" ] && echo "worker object sample: $(echo "$json" | jq -c '.[0] // {}')"
+            # Per-poll: id + busy + metadata, so we can tell whether two coexisting workers are the
+            # SAME VMSS instance (same instance_id / vm_resource_id => double-registration) or two instances.
+            echo "poll $i: $(echo "$json" | jq -c '[ (. // []) | .[] | {id, busy, metadata} ]')"
 
             new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
               ($before | split(",")) as $old
               | [ (. // []) | .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
               | .[0] // empty')
-
             old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
               ($before | split(",")) as $old
               | [ (. // []) | .[] | select(.id as $i | $old | index($i)) ] | length')
-            echo "new_idle=[$new_idle] old_still_present=$old_left"
 
             if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
-              echo "reimaged worker $new_idle is idle and pre-reimage workers are gone"
-              exit 0
+              if [ "$new_idle" = "$candidate" ]; then
+                stable=$((stable + 1))
+              else
+                echo "  -> new candidate worker $new_idle (stability reset)"
+                candidate="$new_idle"; stable=1
+              fi
+              echo "  candidate=$candidate stable=$stable/$SETTLE_POLLS old_left=$old_left"
+              if [ "$stable" -ge "$SETTLE_POLLS" ]; then
+                echo "worker $candidate stable & idle for $SETTLE_POLLS polls — accepting"
+                exit 0
+              fi
+            else
+              if [ -n "$candidate" ]; then
+                echo "  -> candidate $candidate lost (new_idle=[$new_idle] old_left=$old_left) — resetting"
+              fi
+              candidate=""; stable=0
             fi
-
-            sleep 10
+            sleep "$POLL_INTERVAL"
           done
-          echo "timed out waiting for the reimaged worker to register cleanly" >&2
+          echo "no worker reached the stability window in time" >&2
           exit 1
 
-      - name: Run the test stack (guaranteed on the new-image worker)
-        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
-
-      # --- Diagnostics: only when something above failed. The instance is NOT torn
-      # down or reimaged back, so this captures the state the failing run left behind.
-      - name: Capture worker-side diagnostics
-        if: ${{ failure() }}
-        env:
-          VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
+      # Run the test stack with a TARGETED retry: retry once ONLY on the transient
+      # heartbeat-loss failure. A real image regression fails on both attempts -> still caught.
+      - name: Run the test stack (targeted retry on transient worker loss)
         shell: bash
         run: |
-          set -uo pipefail  # keep going even if individual probes fail
-          echo "===== VMSS instance view ====="
-          az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 -o json || true
-
-          echo "===== in-guest probes (run-command) ====="
-          az vmss run-command invoke -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
-            --command-id RunShellScript \
-            --scripts '
-              echo "### spacelift-launcher unit status"; systemctl status spacelift-launcher --no-pager || true
-              echo "### spacelift-launcher journal (last 500)"; journalctl -u spacelift-launcher --no-pager -n 500 || true
-              echo "### docker status"; systemctl status docker --no-pager || true; docker ps -a 2>&1 || true; docker info 2>&1 || true
-              echo "### gvisor/runsc"; which runsc || true; runsc --version 2>&1 || true; cat /etc/docker/daemon.json 2>&1 || true
-              echo "### dmesg tail (OOM/panic?)"; dmesg 2>&1 | tail -300 || true
-              echo "### memory"; free -m || true
-              echo "### cloud-init"; cloud-init status --long 2>&1 || true; tail -200 /var/log/cloud-init-output.log 2>&1 || true
-            ' -o json || true
-
-          echo "===== serial / boot log ====="
-          az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
-            --query "bootDiagnostics" -o json || true
-          az serial-console connect -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 2>&1 | head -200 || true
+          set -uo pipefail
+          run_test() {
+            spacectl stack deploy --id "$TEST_STACK" --auto-confirm 2>&1 | tee /tmp/run.log
+            return "${PIPESTATUS[0]}"
+          }
+          if run_test; then
+            echo "test stack passed"
+            exit 0
+          fi
+          if grep -q "worker stopped reporting its status" /tmp/run.log; then
+            echo "::warning::test failed with 'worker stopped reporting its status' (transient worker) — retrying once"
+            if run_test; then
+              echo "test stack passed on retry"
+              exit 0
+            fi
+            echo "test failed again after retry" >&2
+            exit 1
+          fi
+          echo "test failed for a non-transient reason — not retrying (likely a real image problem)" >&2
+          exit 1
