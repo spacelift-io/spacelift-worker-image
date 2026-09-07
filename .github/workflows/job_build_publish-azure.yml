@@ -123,16 +123,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ env.TEST_SUBSCRIPTION_ID }}
 
-      - name: Snapshot the pool's worker IDs before reimage
-        id: before
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[ (. // []) | .[].id ] | join(",")')
-          echo "ids=$ids" >> "$GITHUB_OUTPUT"
-          echo "workers before reimage: [$ids]"
-
-      - name: Cycle the worker onto the new image (set image via az, then reimage)
+      - name: Cycle the worker onto the new image (set image via az, then replace the instance)
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
         shell: bash
@@ -143,28 +134,36 @@ jobs:
           # (test-only) stack just reverts the pool to its default image.
           az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
             --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
-          
-          # Manual upgrade mode: apply the new model to instance 0 (sets latestModelApplied=true and
-          # moves it onto the new image), then reimage so cloud-init re-runs and the worker re-registers.
-          az vmss update-instances -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
-          az vmss reimage          -g "$TEST_RG" -n "$VMSS_NAME" --instance-ids '*'
 
-      - name: Wait for the reimaged instance to be ready
+          # Replace the instance (scale 0 -> 1) instead of reimage-in-place. Reimage made a single VMSS
+          # instance register TWO worker sessions; a run could bind to the stale one and fail with
+          # "worker stopped reporting its status". A fresh instance boots the new model once and registers
+          # exactly one worker — matching the AWS (ASG refresh) and GCP (MIG REPLACE) gates.
+          az vmss scale -g "$TEST_RG" -n "$VMSS_NAME" --new-capacity 0
+          until [ "$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query 'length(@)' -o tsv)" = "0" ]; do
+            echo "waiting for scale-in to 0 instances..."; sleep 5
+          done
+          az vmss scale -g "$TEST_RG" -n "$VMSS_NAME" --new-capacity 1
+
+      - name: Wait for the new instance to be ready
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
         shell: bash
         run: |
           set -euo pipefail
+          # The replacement instance normally reuses id 0, but don't assume — resolve it.
           for _ in $(seq 1 30); do
-            prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id 0 \
-              --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
-          
-            latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
-              --query "[?instanceId=='0'].latestModelApplied | [0]" -o tsv || true)
-          
-            echo "instance provisioning=$prov latestModelApplied=$latest"
-            [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
-          
+            iid=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query "[0].instanceId" -o tsv || true)
+            if [ -n "$iid" ]; then
+              prov=$(az vmss get-instance-view -g "$TEST_RG" -n "$VMSS_NAME" --instance-id "$iid" \
+                --query "statuses[?starts_with(code,'ProvisioningState/')].code | [0]" -o tsv || true)
+              latest=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" \
+                --query "[?instanceId=='$iid'].latestModelApplied | [0]" -o tsv || true)
+              echo "instance $iid provisioning=$prov latestModelApplied=$latest"
+              [ "$prov" = "ProvisioningState/succeeded" ] && [ "$latest" = "true" ] && exit 0
+            else
+              echo "no instance yet (scale-up in progress)"
+            fi
             sleep 10
           done
           echo "instance did not reach succeeded / latest-model in time" >&2
@@ -181,40 +180,51 @@ jobs:
           echo "VMSS image: $got"
           [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the new image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
 
-      - name: Wait for the reimaged worker (new, idle) and the old one gone
+      - name: Assert exactly one worker, on the image under test
         env:
-          BEFORE: ${{ steps.before.outputs.ids }}
+          EXPECTED_VERSION: ${{ needs.build.outputs.azure_version }}
         shell: bash
         run: |
           set -euo pipefail
           pool_id='${{ steps.pool.outputs.pool_id }}'
+          # Bounded readiness wait for the single replacement worker to register (registration is async).
+          json='[]'
           for _ in $(seq 1 60); do
             json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
-          
-            # A fresh worker: id NOT in the pre-reimage snapshot AND not busy.
-            new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
-              ($before | split(",")) as $old
-              | [ (. // []) | .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
-              | .[0] // empty')
-          
-            # Any pre-reimage (old) worker still registered? Must reach 0 to avoid running on it.
-            old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
-              ($before | split(",")) as $old
-              | [ (. // []) | .[] | select(.id as $i | $old | index($i)) ] | length')
-            echo "new_idle=[$new_idle] old_still_present=$old_left"
-          
-            if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
-              echo "reimaged worker $new_idle is idle and pre-reimage workers are gone"
-              exit 0
-            fi
-          
+            [ "$(echo "$json" | jq 'length')" = "1" ] && break
+            echo "workers=$(echo "$json" | jq 'length'), waiting for the single replacement worker..."
             sleep 10
           done
-          echo "timed out waiting for the reimaged worker to register cleanly" >&2
-          exit 1
+          echo "final worker list: $(echo "$json" | jq -c '[ .[] | {id, busy, metadata} ]')"
+
+          count=$(echo "$json" | jq 'length')
+          [ "$count" = "1" ] || { echo "expected exactly 1 worker, got $count" >&2; exit 1; }
+
+          # The worker self-reports its booted image as the `image_version` tag (set in the pool stack
+          # config from IMDS exactVersion). Assert it is the version we just built, so we can only run on
+          # a worker actually booted from the image under test.
+          got=$(echo "$json" | jq -r '.[0].metadata.image_version // "MISSING"')
+          [ "$got" = "$EXPECTED_VERSION" ] || { echo "worker image_version=$got, expected $EXPECTED_VERSION" >&2; exit 1; }
+          echo "OK: exactly one worker, booted image_version=$got"
 
       - name: Run the test stack (guaranteed on the new-image worker)
-        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_test() {
+            spacectl stack deploy --id "$TEST_STACK" --auto-confirm 2>&1 | tee /tmp/run.log
+            return "${PIPESTATUS[0]}"
+          }
+          if run_test; then echo "test stack passed"; exit 0; fi
+          # Defensive one-shot retry for a transient worker-heartbeat loss; a real image regression
+          # fails deterministically on both attempts and is still caught.
+          if grep -q "worker stopped reporting its status" /tmp/run.log; then
+            echo "::warning::test failed with 'worker stopped reporting its status' — retrying once"
+            run_test && { echo "test stack passed on retry"; exit 0; }
+            echo "test failed again after retry" >&2; exit 1
+          fi
+          echo "test failed for a non-transient reason — not retrying" >&2
+          exit 1
 
   publish:
     name: Promote the image to 'latest'
