@@ -9,21 +9,18 @@ name: DEBUG — Azure gate reimage-churn investigation (no publish)
 # ~68s later by the durable one — so the run bound to a worker that vanished.
 #   BEFORE=[01M1WJJ2...]  gate matched 01M1XB7T... (07:19:54, ~1s)  durable=01M1XBVQ... (07:21:02)
 #
-# Confirmed via metadata logging: the reimage-in-place produces TWO worker sessions on the
-# SAME VMSS instance (same instance_id / vm_resource_id) — a launcher double-registration.
-#
-# HYPOTHESIS UNDER TEST HERE: replacing the instance (Azure analogue of the AWS ASG
-# scale-down/up) instead of reimaging-in-place yields a single, clean worker registration —
-# matching AWS (ASG refresh) and GCP (MIG REPLACE), which don't exhibit the churn.
+# Confirmed: reimage-in-place produced TWO worker sessions on the SAME VMSS instance
+# (launcher double-registration); replacing the instance (scale 0->1, the Azure analogue of
+# the AWS ASG scale-down/up) yields a single clean worker — matching AWS/GCP. So the gate no
+# longer needs settle/churn tracking.
 #
 # This workflow:
 #   1. sets the VMSS model to the target image (default 3.0.122, NO rebuild), then
 #      SCALES 0 -> 1 so a genuinely NEW instance boots from the new model (not reimage);
-#   2. OBSERVES worker registrations — polls the pool every 10s and logs every worker
-#      id + busy + metadata, so we can see whether the double-registration is GONE;
-#   3. keeps the SETTLE window (same new idle worker for SETTLE_POLLS polls) as a guard;
-#   4. runs the test stack with a TARGETED retry (once, only on
-#      "worker stopped reporting its status"); a genuine image regression fails both.
+#   2. waits for the single replacement worker, then ASSERTS the pool has exactly one worker
+#      and it self-reports the image version under test (image_version metadata tag, set in the
+#      pool stack config from IMDS exactVersion — like GCP's gcp_image);
+#   3. runs the test stack (with a cheap one-shot retry on "worker stopped reporting its status").
 #
 # It NEVER publishes/promotes and is NOT the "Scheduled publish" pipeline, so it does
 # not trip the Datadog CI monitor or page incident.io / #development.
@@ -51,10 +48,6 @@ env:
   AZURE_CLIENT_ID: "976e4a6e-c619-417e-9add-50e2d674e2db"
   TEST_SUBSCRIPTION_ID: "00eb57d2-b059-4e1f-ac2d-c10400a2cf24"
   TEST_RG: rg-ami-resilience-azure
-  # How long a new idle worker must stay the SAME id before we accept it (settle window).
-  # 9 polls x 10s = 90s, chosen to exceed the ~68s transient-churn gap observed in the failure.
-  SETTLE_POLLS: "9"
-  POLL_INTERVAL: "10"
 
 jobs:
   build:
@@ -102,7 +95,7 @@ jobs:
         run: echo "azure_version=$PKR_VAR_gallery_image_version" >> "$GITHUB_OUTPUT"
 
   test:
-    name: Cycle + observe worker churn + settle + run test stack
+    name: Replace instance (scale 0->1), assert one worker on new image, run test stack
     needs: build
     # Runs when build succeeded OR was skipped (pinned/default version). Only skips if build failed.
     if: ${{ always() && needs.build.result != 'failure' && needs.build.result != 'cancelled' }}
@@ -164,15 +157,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ env.TEST_SUBSCRIPTION_ID }}
 
-      - name: Snapshot the pool's worker IDs before reimage
-        id: before
-        shell: bash
-        run: |
-          set -euo pipefail
-          ids=$(spacectl workerpool worker list --pool-id "${{ steps.pool.outputs.pool_id }}" --output json | jq -r '[ (. // []) | .[].id ] | join(",")')
-          echo "ids=$ids" >> "$GITHUB_OUTPUT"
-          echo "workers before reimage: [$ids]"
-
       - name: Cycle the worker onto the image (set image via az, then scale 0->1)
         env:
           VMSS_NAME: ${{ steps.pool.outputs.vmss_name }}
@@ -229,57 +213,35 @@ jobs:
           echo "VMSS image: $got"
           [ "$got" = "$NEW_IMAGE" ] || { echo "VMSS is NOT on the requested image. want=$NEW_IMAGE got=$got" >&2; exit 1; }
 
-      # OBSERVE the churn + apply the SETTLE window fix in one step.
-      # Logs the FULL worker list each poll (transient->durable churn is visible), and
-      # accepts a new, idle worker only after it stays the same id for SETTLE_POLLS
-      # consecutive polls — so a transient generation (e.g. 01M1XB7T that vanishes ~68s
-      # later) never satisfies the window and is skipped.
-      - name: Wait for a STABLE reimaged worker (observe churn + settle)
+      # Replace-instance (scale 0->1) yields a SINGLE clean worker, so the old settle/churn
+      # tracking is gone. Wait only for the one replacement worker to register (async), then
+      # ASSERT: the pool has exactly one worker, and it self-reports the image version under
+      # test via the `image_version` metadata tag (set in the pool stack config from IMDS
+      # exactVersion, mirroring GCP's gcp_image). Requires the pool stack applied with that tag.
+      - name: Assert exactly one worker, on the image under test
         env:
-          BEFORE: ${{ steps.before.outputs.ids }}
+          EXPECTED_VERSION: ${{ steps.img.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           pool_id='${{ steps.pool.outputs.pool_id }}'
-          candidate=""; stable=0
-          for i in $(seq 1 60); do
+          # Bounded readiness wait for the single replacement worker to register (registration is
+          # async — not the old stability poll; just wait until the pool is at its steady size of 1).
+          json='[]'
+          for _ in $(seq 1 60); do
             json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
-            # One-time full-object dump so we see the exact field names (metadata shape).
-            [ "$i" = "1" ] && echo "worker object sample: $(echo "$json" | jq -c '.[0] // {}')"
-            # Per-poll: id + busy + metadata, so we can tell whether two coexisting workers are the
-            # SAME VMSS instance (same instance_id / vm_resource_id => double-registration) or two instances.
-            echo "poll $i: $(echo "$json" | jq -c '[ (. // []) | .[] | {id, busy, metadata} ]')"
-
-            new_idle=$(echo "$json" | jq -r --arg before "$BEFORE" '
-              ($before | split(",")) as $old
-              | [ (. // []) | .[] | select(.busy == false) | select((.id as $i | $old | index($i)) | not) | .id ]
-              | .[0] // empty')
-            old_left=$(echo "$json" | jq -r --arg before "$BEFORE" '
-              ($before | split(",")) as $old
-              | [ (. // []) | .[] | select(.id as $i | $old | index($i)) ] | length')
-
-            if [ -n "$new_idle" ] && [ "$old_left" = "0" ]; then
-              if [ "$new_idle" = "$candidate" ]; then
-                stable=$((stable + 1))
-              else
-                echo "  -> new candidate worker $new_idle (stability reset)"
-                candidate="$new_idle"; stable=1
-              fi
-              echo "  candidate=$candidate stable=$stable/$SETTLE_POLLS old_left=$old_left"
-              if [ "$stable" -ge "$SETTLE_POLLS" ]; then
-                echo "worker $candidate stable & idle for $SETTLE_POLLS polls — accepting"
-                exit 0
-              fi
-            else
-              if [ -n "$candidate" ]; then
-                echo "  -> candidate $candidate lost (new_idle=[$new_idle] old_left=$old_left) — resetting"
-              fi
-              candidate=""; stable=0
-            fi
-            sleep "$POLL_INTERVAL"
+            [ "$(echo "$json" | jq 'length')" = "1" ] && break
+            echo "workers=$(echo "$json" | jq 'length'), waiting for the single replacement worker..."
+            sleep 10
           done
-          echo "no worker reached the stability window in time" >&2
-          exit 1
+          echo "final worker list: $(echo "$json" | jq -c '[ .[] | {id, busy, metadata} ]')"
+
+          count=$(echo "$json" | jq 'length')
+          [ "$count" = "1" ] || { echo "expected exactly 1 worker, got $count" >&2; exit 1; }
+
+          got=$(echo "$json" | jq -r '.[0].metadata.image_version // "MISSING"')
+          [ "$got" = "$EXPECTED_VERSION" ] || { echo "worker image_version=$got, expected $EXPECTED_VERSION" >&2; exit 1; }
+          echo "OK: exactly one worker, booted image_version=$got"
 
       # Run the test stack with a TARGETED retry: retry once ONLY on the transient
       # heartbeat-loss failure. A real image regression fails on both attempts -> still caught.
