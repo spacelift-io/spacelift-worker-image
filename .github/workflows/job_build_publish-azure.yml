@@ -200,23 +200,7 @@ jobs:
           echo "OK: exactly one worker, booted image_version=$got"
 
       - name: Run the test stack (guaranteed on the new-image worker)
-        shell: bash
-        run: |
-          set -uo pipefail
-          run_test() {
-            spacectl stack deploy --id "$TEST_STACK" --auto-confirm 2>&1 | tee /tmp/run.log
-            return "${PIPESTATUS[0]}"
-          }
-          if run_test; then echo "test stack passed"; exit 0; fi
-          # Defensive one-shot retry for a transient worker-heartbeat loss; a real image regression
-          # fails deterministically on both attempts and is still caught.
-          if grep -q "worker stopped reporting its status" /tmp/run.log; then
-            echo "::warning::test failed with 'worker stopped reporting its status' — retrying once"
-            run_test && { echo "test stack passed on retry"; exit 0; }
-            echo "test failed again after retry" >&2; exit 1
-          fi
-          echo "test failed for a non-transient reason — not retrying" >&2
-          exit 1
+        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
 
   publish:
     name: Promote the image to 'latest'
