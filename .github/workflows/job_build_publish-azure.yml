@@ -56,7 +56,6 @@ jobs:
           PACKER_GITHUB_API_TOKEN: "${{ github.token }}"
 
       - name: Build the Azure image (PRIVATE — excluded from latest)
-        # Single source of truth for the SP client id (job-level env can't reference the env context).
         env:
           PKR_VAR_client_id: ${{ env.AZURE_CLIENT_ID }}
         run: packer build azure.pkr.hcl
@@ -129,16 +128,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The swap is az-only; we deliberately do NOT setvar the stack's TF_VAR_source_image_id, so a
-          # failed test never pins the pool's terraform config to the bad version — a later apply of the
-          # (test-only) stack just reverts the pool to its default image.
           az vmss update -g "$TEST_RG" -n "$VMSS_NAME" \
             --set virtualMachineProfile.storageProfile.imageReference.communityGalleryImageId="$NEW_IMAGE"
 
-          # Replace the instance (scale 0 -> 1) instead of reimage-in-place. Reimage made a single VMSS
-          # instance register TWO worker sessions; a run could bind to the stale one and fail with
-          # "worker stopped reporting its status". A fresh instance boots the new model once and registers
-          # exactly one worker — matching the AWS (ASG refresh) and GCP (MIG REPLACE) gates.
           az vmss scale -g "$TEST_RG" -n "$VMSS_NAME" --new-capacity 0
           until [ "$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query 'length(@)' -o tsv)" = "0" ]; do
             echo "waiting for scale-in to 0 instances..."; sleep 5
@@ -151,7 +143,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The replacement instance normally reuses id 0, but don't assume — resolve it.
           for _ in $(seq 1 30); do
             iid=$(az vmss list-instances -g "$TEST_RG" -n "$VMSS_NAME" --query "[0].instanceId" -o tsv || true)
             if [ -n "$iid" ]; then
@@ -169,9 +160,6 @@ jobs:
           echo "instance did not reach succeeded / latest-model in time" >&2
           exit 1
 
-      # No separate "assert VMSS model is on the new image" step: the worker-level image_version
-      # assertion below is end-to-end (a worker can't self-report the built version unless the
-      # model, the instance, and the boot were all correct), so it subsumes a model check.
       - name: Assert exactly one worker, on the image under test
         env:
           EXPECTED_VERSION: ${{ needs.build.outputs.azure_version }}
@@ -179,11 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           pool_id='${{ steps.pool.outputs.pool_id }}'
-          # Bounded readiness wait for the single replacement worker (registration is async). Succeed
-          # only once the pool has exactly one worker AND it self-reports the image under test (the
-          # `image_version` tag, set in the pool stack config from IMDS exactVersion) — otherwise a
-          # stale worker still listed during the scale-in grace period could be accepted while the new
-          # one hasn't registered yet.
+          
           for _ in $(seq 1 60); do
             json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json) || json='[]'
             count=$(echo "$json" | jq 'length')

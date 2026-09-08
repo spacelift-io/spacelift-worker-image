@@ -33,9 +33,10 @@ module "azure-worker" {
     export SPACELIFT_POOL_PRIVATE_KEY=${spacelift_worker_pool.this.private_key}
     export SPACELIFT_WORKER_COMMS_PROTOCOL="poll"
     export SPACELIFT_WORKER_COMMS_URL="https://app.spacelift.dev"
-    # Self-report the booted image version as a worker metadata tag (like GCP's gcp_image), so the
+    # Self-report the booted image version as a worker metadata tag, so the
     # test gate can assert the worker actually booted the image under test. `exactVersion` resolves
     # "latest" to the concrete gallery version (e.g. 3.0.122); needs IMDS api-version >= 2023-07-01.
+    # Uses metadata service, docs: https://learn.microsoft.com/en-us/azure/virtual-machines/instance-metadata-service
     export SPACELIFT_METADATA_image_version="$(curl -s -H Metadata:true --noproxy '*' 'http://169.254.169.254/metadata/instance/compute/storageProfile/imageReference?api-version=2023-07-01' | jq -r '.exactVersion // "unknown"')"
   EOT
 
