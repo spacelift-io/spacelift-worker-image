@@ -179,31 +179,25 @@ jobs:
         run: |
           set -euo pipefail
           pool_id='${{ steps.pool.outputs.pool_id }}'
-          # Bounded readiness wait for the single replacement worker to register (registration is
-          # async). Break only once the pool has exactly one worker AND it self-reports the image under
-          # test — otherwise a stale worker still listed during the scale-in grace period could be
-          # accepted while the new one hasn't registered yet, failing the assert on a good image.
-          json='[]'
+          # Bounded readiness wait for the single replacement worker (registration is async). Succeed
+          # only once the pool has exactly one worker AND it self-reports the image under test (the
+          # `image_version` tag, set in the pool stack config from IMDS exactVersion) — otherwise a
+          # stale worker still listed during the scale-in grace period could be accepted while the new
+          # one hasn't registered yet.
           for _ in $(seq 1 60); do
-            json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json)
-            if [ "$(echo "$json" | jq 'length')" = "1" ] \
-               && [ "$(echo "$json" | jq -r '.[0].metadata.image_version // "MISSING"')" = "$EXPECTED_VERSION" ]; then
-              break
+            json=$(spacectl workerpool worker list --pool-id "$pool_id" --output json) || json='[]'
+            count=$(echo "$json" | jq 'length')
+            got=$(echo "$json" | jq -r '.[0].metadata.image_version // "MISSING"')
+            if [ "$count" = "1" ] && [ "$got" = "$EXPECTED_VERSION" ]; then
+              echo "OK: exactly one worker, booted image_version=$got"
+              exit 0
             fi
-            echo "workers=$(echo "$json" | jq 'length'), waiting for the single replacement worker on image $EXPECTED_VERSION..."
+            echo "count=$count image_version=$got, waiting for the replacement worker on $EXPECTED_VERSION..."
             sleep 10
           done
-          echo "final worker list: $(echo "$json" | jq -c '[ .[] | {id, busy, metadata} ]')"
-
-          count=$(echo "$json" | jq 'length')
-          [ "$count" = "1" ] || { echo "expected exactly 1 worker, got $count" >&2; exit 1; }
-
-          # The worker self-reports its booted image as the `image_version` tag (set in the pool stack
-          # config from IMDS exactVersion). Assert it is the version we just built, so we can only run on
-          # a worker actually booted from the image under test.
-          got=$(echo "$json" | jq -r '.[0].metadata.image_version // "MISSING"')
-          [ "$got" = "$EXPECTED_VERSION" ] || { echo "worker image_version=$got, expected $EXPECTED_VERSION" >&2; exit 1; }
-          echo "OK: exactly one worker, booted image_version=$got"
+          echo "final worker list: $(echo "$json" | jq -c '[ .[] | {id, busy, metadata} ]')" >&2
+          echo "timed out: last saw count=$count image_version=$got, expected exactly 1 on $EXPECTED_VERSION" >&2
+          exit 1
 
       - name: Run the test stack (guaranteed on the new-image worker)
         run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
