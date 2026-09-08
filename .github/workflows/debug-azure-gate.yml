@@ -237,28 +237,5 @@ jobs:
           [ "$got" = "$EXPECTED_VERSION" ] || { echo "worker image_version=$got, expected $EXPECTED_VERSION" >&2; exit 1; }
           echo "OK: exactly one worker, booted image_version=$got"
 
-      # Run the test stack with a TARGETED retry: retry once ONLY on the transient
-      # heartbeat-loss failure. A real image regression fails on both attempts -> still caught.
-      - name: Run the test stack (targeted retry on transient worker loss)
-        shell: bash
-        run: |
-          set -uo pipefail
-          run_test() {
-            spacectl stack deploy --id "$TEST_STACK" --auto-confirm 2>&1 | tee /tmp/run.log
-            return "${PIPESTATUS[0]}"
-          }
-          if run_test; then
-            echo "test stack passed"
-            exit 0
-          fi
-          if grep -q "worker stopped reporting its status" /tmp/run.log; then
-            echo "::warning::test failed with 'worker stopped reporting its status' (transient worker) — retrying once"
-            if run_test; then
-              echo "test stack passed on retry"
-              exit 0
-            fi
-            echo "test failed again after retry" >&2
-            exit 1
-          fi
-          echo "test failed for a non-transient reason — not retrying (likely a real image problem)" >&2
-          exit 1
+      - name: Run the test stack
+        run: spacectl stack deploy --id "$TEST_STACK" --auto-confirm
