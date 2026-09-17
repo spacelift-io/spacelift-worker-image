@@ -13,19 +13,6 @@ set -euo pipefail
 CURRENTARCH=$(uname -m)
 URL=https://storage.googleapis.com/gvisor/releases/release/latest/${CURRENTARCH}
 
-# GNU tar shells out to the zstd binary for --zstd; AL2023 minimal ships
-# neither tar nor zstd, Ubuntu ships tar but not zstd.
-MISSING=()
-for tool in tar zstd; do
-  command -v "${tool}" >/dev/null 2>&1 || MISSING+=("${tool}")
-done
-if [ "${#MISSING[@]}" -gt 0 ]; then
-  if command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y "${MISSING[@]}"
-  else
-    sudo apt-get -y install "${MISSING[@]}"
-  fi
-fi
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "${WORKDIR}"' EXIT
