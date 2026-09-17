@@ -1,5 +1,7 @@
 # This script installs gVisor (runsc, the containerd shim and the gvisor-bin/
-# sidecar binaries that runsc executes at runtime).
+# sidecar binaries that runsc executes at runtime), following the upstream
+# "Install latest release" instructions:
+# https://gvisor.dev/docs/user_guide/install/
 #
 # gVisor ships each release as a single archive. The per-binary artifacts
 # (runsc, runsc.sha512, containerd-shim-runsc-v1, ...) that this script used
@@ -11,9 +13,10 @@ set -euo pipefail
 CURRENTARCH=$(uname -m)
 URL=https://storage.googleapis.com/gvisor/releases/release/latest/${CURRENTARCH}
 
-# GNU tar shells out to the bzip2 binary for -j; AL2023 minimal does not ship it.
+# GNU tar shells out to the zstd binary for --zstd; AL2023 minimal ships
+# neither tar nor zstd, Ubuntu ships tar but not zstd.
 MISSING=()
-for tool in tar bzip2; do
+for tool in tar zstd; do
   command -v "${tool}" >/dev/null 2>&1 || MISSING+=("${tool}")
 done
 if [ "${#MISSING[@]}" -gt 0 ]; then
@@ -31,11 +34,11 @@ cd "${WORKDIR}"
 # --fail turns an HTTP error into a curl error instead of writing the 404 body
 # to disk and surfacing later as a checksum mismatch.
 curl --fail --silent --show-error --location --retry 3 \
-  --remote-name-all "${URL}"/{gvisor.tar.bz2,gvisor.tar.bz2.sha512}
-sha512sum -c gvisor.tar.bz2.sha512
+  --remote-name-all "${URL}"/{gvisor.tar.zstd,gvisor.tar.zstd.sha512}
+sha512sum -c gvisor.tar.zstd.sha512
 
 # Archive members are already 0755; runsc looks for gvisor-bin/ beside itself.
-sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin
+sudo tar --zstd -xf gvisor.tar.zstd -C /usr/local/bin
 
 sudo /usr/local/bin/runsc install -- --fsgofer-host-uds
 sudo systemctl restart docker
