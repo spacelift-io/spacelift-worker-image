@@ -160,6 +160,7 @@ build {
       "shared/scripts/data-directories.sh",
       "shared/scripts/apt-update.sh",
       "shared/scripts/apt-install-docker.sh",
+      "shared/scripts/apt-install-tar-zstd.sh",
       "shared/scripts/gvisor.sh",
       "shared/scripts/apt-install-jq.sh",
       "azure/scripts/azure-cli.sh"
