@@ -167,6 +167,7 @@ build {
       "shared/scripts/data-directories.sh",
       "aws/scripts/dnf-update.sh",
       "aws/scripts/system-deps.sh",
+      "shared/scripts/logrotate.sh",
       "aws/scripts/docker.sh",
       "shared/scripts/gvisor.sh",
       "aws/scripts/cloudwatch-agent.sh",
