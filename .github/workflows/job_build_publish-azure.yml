@@ -81,25 +81,13 @@ jobs:
       contents: read
     env:
       SPACELIFT_API_KEY_ID: ${{ vars.SPACELIFT_OIDC_API_KEY_ID }}
+      SPACELIFT_API_KEY_OIDC_PROVIDER: github-actions
       # The exact just-built version, pinned via the community gallery (it is excluded
       # from 'latest' but still deployable by explicit version).
       NEW_IMAGE: /communityGalleries/spacelift-40913cda-9bf9-4bcb-bf90-78fd83f30079/images/spacelift_worker_image_ubu_lts/versions/${{ needs.build.outputs.azure_version }}
     steps:
       - name: Setup spacectl
         uses: spacelift-io/setup-spacectl@main
-
-      - name: Authenticate to Spacelift via OIDC
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Declare/assign separately so `set -e` catches a failed token fetch (SC2155).
-          SPACELIFT_API_KEY_SECRET=$(curl -sf \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=spacelift-ci-gh.app.spacelift.dev" | jq -r '.value')
-          export SPACELIFT_API_KEY_SECRET
-          token=$(spacectl profile export-token)
-          echo "::add-mask::$token"
-          echo "SPACELIFT_API_TOKEN=$token" >> "$GITHUB_ENV"
 
       - name: Resolve the pool's VMSS name and worker-pool id
         id: pool
